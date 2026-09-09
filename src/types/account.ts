@@ -29,10 +29,19 @@ export interface DashboardState {
 export type LoginProgress =
   | { status: "idle" }
   | { status: "waiting"; authUrl: string }
+  | { status: "duplicate"; account: ManagedAccount }
   | { status: "completed"; account: ManagedAccount }
   | { status: "failed"; message: string };
 
 export interface WindowPlacement {
   horizontal: "left" | "right";
   vertical: "up" | "down";
+}
+
+export type ProcessState = "running" | "stopped" | "switching" | "error";
+
+export interface UserSettings {
+  refreshIntervalMinutes: number;
+  launchAtLogin: boolean;
+  rememberPosition: boolean;
 }

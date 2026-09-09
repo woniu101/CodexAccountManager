@@ -11,6 +11,21 @@ pub fn is_codex_running() -> bool {
     codex_pids().is_ok_and(|pids| !pids.is_empty())
 }
 
+pub fn is_codex_cli_running() -> Result<bool, String> {
+    let script = "$items=Get-CimInstance Win32_Process -Filter \"Name='codex.exe'\" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -notlike '*app-server*' }; $items.ProcessId";
+    let output = Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|error| format!("无法检查 Codex CLI 进程：{error}"))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .any(|line| line.trim().parse::<u32>().is_ok()))
+}
+
 pub fn stop_codex_desktop() -> Result<bool, String> {
     let pids = codex_pids()?;
     if pids.is_empty() {

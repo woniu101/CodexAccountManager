@@ -1,43 +1,73 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import type { ManagedAccount } from "../types/account";
+import type { ManagedAccount, ProcessState, UserSettings } from "../types/account";
 import AccountRow from "./AccountRow.vue";
+import SettingsView from "./SettingsView.vue";
 
 const props = defineProps<{
   accounts: ManagedAccount[];
-  codexRunning: boolean;
+  processState: ProcessState;
   switchingId?: string;
   loading: boolean;
+  settingsOpen: boolean;
+  settings: UserSettings;
+  savingSettings: boolean;
 }>();
 const emit = defineEmits<{
   add: [];
   settings: [];
   importCurrent: [];
   switch: [account: ManagedAccount];
+  updateSettings: [settings: UserSettings];
+  refresh: [];
+  collapse: [];
 }>();
 
-const ordered = computed(() => [
-  ...props.accounts.filter((account) => !account.isActive),
-  ...props.accounts.filter((account) => account.isActive),
-]);
+const current = computed(() => props.accounts.find((account) => account.isActive));
+const others = computed(() => props.accounts.filter((account) => !account.isActive));
 </script>
 
 <template>
   <section class="account-panel">
     <nav class="panel-actions">
-      <button @click.stop="emit('add')"><b>＋</b> 添加账号</button>
-      <button @click.stop="emit('settings')"><b>⚙</b> 设置</button>
+      <button :class="{ active: !settingsOpen }" @click.stop="emit('add')">
+        <span class="action-icon">＋</span> 添加账号
+      </button>
+      <button :class="{ active: settingsOpen }" @click.stop="emit('settings')">
+        <span class="action-icon gear">⚙</span> 设置
+      </button>
     </nav>
-    <div v-if="accounts.length" class="account-list">
+
+    <SettingsView
+      v-if="settingsOpen"
+      :settings="settings"
+      :saving="savingSettings"
+      @update="emit('updateSettings', $event)"
+      @refresh="emit('refresh')"
+    />
+
+    <div v-else-if="accounts.length" class="accounts-body">
+      <div class="other-list">
+        <AccountRow
+          v-for="account in others"
+          :key="account.id"
+          :account="account"
+          :process-state="processState"
+          :switching="switchingId === account.id"
+          @switch="emit('switch', $event)"
+        />
+      </div>
       <AccountRow
-        v-for="account in ordered"
-        :key="account.id"
-        :account="account"
-        :codex-running="codexRunning"
-        :switching="switchingId === account.id"
+        v-if="current"
+        class="current-row"
+        :account="current"
+        :process-state="processState"
+        :switching="false"
         @switch="emit('switch', $event)"
+        @collapse="emit('collapse')"
       />
     </div>
+
     <div v-else class="empty-panel">
       <strong>还没有已管理的账号</strong>
       <span>导入当前 Codex 登录状态即可开始</span>
@@ -49,22 +79,18 @@ const ordered = computed(() => [
 </template>
 
 <style scoped>
-.account-panel {
-  width: 428px;
-  max-height: 368px;
-  overflow: hidden;
-  border-radius: 20px 20px 38px 38px;
-  display: flex;
-  flex-direction: column;
-}
-.panel-actions { height: 54px; flex: 0 0 54px; display: grid; grid-template-columns: 1fr 1fr; }
-.panel-actions button { border: 0; color: #e4ebf5; background: transparent; cursor: pointer; font-size: 13px; }
-.panel-actions button + button { border-left: 1px solid rgba(145, 161, 183, .25); }
-.panel-actions button:hover { background: rgba(255, 255, 255, .05); }
-.panel-actions b { font-size: 19px; margin-right: 6px; font-weight: 400; }
-.account-list { overflow-y: auto; overscroll-behavior: contain; }
-.account-list :deep(.account-row.active) { position: sticky; bottom: 0; background: rgba(19, 25, 35, .96); }
-.empty-panel { min-height: 210px; border-top: 1px solid rgba(145, 161, 183, .25); display: grid; place-content: center; gap: 9px; text-align: center; color: #eef4fc; }
+.account-panel { width: 520px; height: 100%; overflow: hidden; border-radius: 20px 20px 38px 38px; display: flex; flex-direction: column; }
+.panel-actions { height: 56px; flex: 0 0 56px; display: grid; grid-template-columns: 1fr 1fr; }
+.panel-actions button { position: relative; border: 0; color: #dce5f1; background: transparent; cursor: pointer; font-size: 13px; }
+.panel-actions button + button { border-left: 1px solid rgba(145, 161, 183, .24); }
+.panel-actions button:hover, .panel-actions button.active { background: rgba(255, 255, 255, .035); color: #f5f8fc; }
+.panel-actions button.active::after { content: ""; position: absolute; left: 35%; right: 35%; bottom: 0; height: 2px; border-radius: 2px; background: #4dd7ff; opacity: .75; }
+.action-icon { display: inline-block; margin-right: 8px; font-size: 20px; font-weight: 350; vertical-align: -1px; }
+.action-icon.gear { font-size: 16px; }
+.accounts-body { display: flex; flex: 1; min-height: 0; flex-direction: column; border-top: 1px solid rgba(145, 161, 183, .24); }
+.other-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #46566c transparent; }
+.current-row { flex: 0 0 auto; background: rgba(16, 23, 33, .72); border-top-color: rgba(166, 185, 211, .36); }
+.empty-panel { flex: 1; border-top: 1px solid rgba(145, 161, 183, .24); display: grid; place-content: center; gap: 9px; text-align: center; color: #eef4fc; }
 .empty-panel span { color: #95a2b4; font-size: 12px; }
 .empty-panel button { justify-self: center; margin-top: 6px; border: 1px solid #1685ff; background: #087ef5; color: white; border-radius: 8px; padding: 8px 14px; cursor: pointer; }
 </style>

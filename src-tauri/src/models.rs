@@ -39,6 +39,7 @@ pub struct DashboardState {
 pub enum LoginProgress {
     Idle,
     Waiting { auth_url: String },
+    Duplicate { account: Box<ManagedAccount> },
     Completed { account: Box<ManagedAccount> },
     Failed { message: String },
 }
@@ -48,4 +49,22 @@ pub enum LoginProgress {
 pub struct WindowPlacement {
     pub horizontal: String,
     pub vertical: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserSettings {
+    pub refresh_interval_minutes: u64,
+    pub launch_at_login: bool,
+    pub remember_position: bool,
+}
+
+impl Default for UserSettings {
+    fn default() -> Self {
+        Self {
+            refresh_interval_minutes: 5,
+            launch_at_login: false,
+            remember_position: true,
+        }
+    }
 }

@@ -28,14 +28,7 @@ set "CARGO_HOME=%PROJECT_ROOT%\.cargo-cache"
 set "npm_config_cache=%PROJECT_ROOT%\.npm-cache"
 cd /d "%PROJECT_ROOT%"
 
-call npm run build
-if errorlevel 1 exit /b %errorlevel%
-
 call npm run tauri build -- --no-bundle
 if errorlevel 1 exit /b %errorlevel%
 
-if not exist "%PROJECT_ROOT%\release" mkdir "%PROJECT_ROOT%\release"
-copy /y "%PROJECT_ROOT%\src-tauri\target\release\codex-account-manager.exe" "%PROJECT_ROOT%\release\CodexAccountManager.exe" >nul
-if errorlevel 1 exit /b %errorlevel%
-
-echo Created release\CodexAccountManager.exe
+echo Created src-tauri\target\release\codex-account-manager.exe

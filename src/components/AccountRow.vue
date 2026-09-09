@@ -1,20 +1,31 @@
 <script setup lang="ts">
-import type { ManagedAccount } from "../types/account";
+import { computed } from "vue";
+import type { ManagedAccount, ProcessState } from "../types/account";
 import QuotaRing from "./QuotaRing.vue";
 import QuotaRows from "./QuotaRows.vue";
 
-defineProps<{ account: ManagedAccount; codexRunning: boolean; switching: boolean }>();
-defineEmits<{ switch: [account: ManagedAccount] }>();
+const props = defineProps<{ account: ManagedAccount; processState: ProcessState; switching: boolean }>();
+const emit = defineEmits<{ switch: [account: ManagedAccount]; collapse: [] }>();
+
+const freshness = computed(() => {
+  if (!props.account.lastError) return undefined;
+  if (props.account.credentialState === "missing") return "凭据缺失，请重新登录";
+  if (props.account.credentialState === "expired") return "认证可能已失效";
+  if (!props.account.lastUpdatedAt) return "当前无法更新";
+  const minutes = Math.max(1, Math.floor((Date.now() / 1000 - props.account.lastUpdatedAt) / 60));
+  return `离线 · 更新于 ${minutes} 分钟前`;
+});
 </script>
 
 <template>
   <article :class="['account-row', { active: account.isActive }]">
-    <div class="identity">
+    <div class="identity" :title="account.isActive ? '点击圆球收起面板' : undefined" @click="account.isActive && emit('collapse')">
       <QuotaRing
         v-if="account.isActive"
         :five-hour="account.fiveHour"
         :weekly="account.weekly"
-        :codex-running="codexRunning"
+        :process-state="processState"
+        interaction-hint="点击圆球收起面板"
       />
       <span v-else class="initial">{{ (account.alias || account.email).charAt(0).toUpperCase() }}</span>
     </div>
@@ -24,7 +35,7 @@ defineEmits<{ switch: [account: ManagedAccount] }>();
         <span class="plan">{{ account.planType?.toUpperCase() || "CHATGPT" }}</span>
       </header>
       <QuotaRows :five-hour="account.fiveHour" :weekly="account.weekly" />
-      <small v-if="account.lastError" :title="account.lastError">数据已过期</small>
+      <small v-if="freshness" :title="account.lastError">{{ freshness }}</small>
     </div>
     <button
       :class="['action', { current: account.isActive }]"
@@ -38,7 +49,7 @@ defineEmits<{ switch: [account: ManagedAccount] }>();
 
 <style scoped>
 .account-row {
-  min-height: 96px;
+  min-height: 102px;
   display: grid;
   grid-template-columns: 82px minmax(0, 1fr) 68px;
   align-items: center;
@@ -47,6 +58,7 @@ defineEmits<{ switch: [account: ManagedAccount] }>();
   border-top: 1px solid rgba(145, 161, 183, .25);
 }
 .identity { width: 76px; display: grid; place-items: center; }
+.account-row.active .identity { cursor: pointer; }
 .initial {
   width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center;
   color: #f0f5fb; font-weight: 650; font-size: 19px;
@@ -61,5 +73,5 @@ strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-si
 .action:hover:not(:disabled) { background: #2392ff; }
 .action.current { border-color: #2fbf86; color: #66e5ad; background: rgba(24, 139, 94, .18); }
 .action:disabled { cursor: default; opacity: .9; }
-small { color: #e8a96d; font-size: 10px; position: absolute; }
+small { color: #e8a96d; font-size: 10px; }
 </style>

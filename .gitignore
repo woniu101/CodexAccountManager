@@ -15,8 +15,6 @@ dist-ssr
 .cargo-cache/
 src-tauri/target/
 
-# The portable development build under /release is intentionally versioned.
-
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import type { ManagedAccount } from "../types/account";
+import type { ManagedAccount, ProcessState } from "../types/account";
 import QuotaRing from "./QuotaRing.vue";
 import QuotaRows from "./QuotaRows.vue";
 
-defineProps<{ account?: ManagedAccount; codexRunning: boolean; loading: boolean }>();
+defineProps<{ account?: ManagedAccount; processState: ProcessState; loading: boolean }>();
 defineEmits<{ expand: [] }>();
 </script>
 
 <template>
   <section class="summary pill" @click="$emit('expand')">
-    <QuotaRing :five-hour="account?.fiveHour" :weekly="account?.weekly" :codex-running="codexRunning" />
+    <QuotaRing :five-hour="account?.fiveHour" :weekly="account?.weekly" :process-state="processState" />
     <div v-if="account" class="summary-content">
       <header>
         <strong>{{ account.alias || account.email }}</strong>
@@ -26,7 +26,7 @@ defineEmits<{ expand: [] }>();
 
 <style scoped>
 .summary {
-  width: 428px;
+  width: 520px;
   height: 88px;
   padding: 6px;
   display: grid;

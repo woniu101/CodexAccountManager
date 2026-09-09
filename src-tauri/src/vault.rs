@@ -8,6 +8,7 @@ use std::{
     fs::{self, File},
     io::Write,
     path::{Path, PathBuf},
+    time::{Duration, SystemTime},
 };
 use uuid::Uuid;
 
@@ -40,6 +41,10 @@ pub fn load_accounts() -> Result<Vec<AccountMeta>, String> {
     }
     serde_json::from_slice(&fs::read(path).map_err(display_io("读取账号索引失败"))?)
         .map_err(|error| format!("账号索引格式错误：{error}"))
+}
+
+pub fn has_account(account_id: &str) -> Result<bool, String> {
+    Ok(load_accounts()?.iter().any(|item| item.id == account_id))
 }
 
 pub fn save_accounts(accounts: &[AccountMeta]) -> Result<(), String> {
@@ -130,6 +135,12 @@ pub fn refresh_all_accounts() -> Result<Vec<ManagedAccount>, String> {
                     ..ManagedAccount::default()
                 });
                 cached.is_active = is_active;
+                let credential_path = app_data_dir()?.join(&meta.credential_file);
+                if !credential_path.exists() {
+                    cached.credential_state = "missing".to_string();
+                } else if message.contains("未登录") || message.contains("认证") {
+                    cached.credential_state = "expired".to_string();
+                }
                 cached.last_error = Some(message);
                 views.push(cached);
             }
@@ -181,7 +192,11 @@ pub fn write_switch_journal(source: Option<&str>, target: &str, phase: &str) -> 
     let journal = serde_json::json!({
         "sourceAccountId": source,
         "targetAccountId": target,
-        "phase": phase
+        "phase": phase,
+        "updatedAt": SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
     });
     write_and_flush(
         &root.join("switch-journal.json"),
@@ -189,6 +204,69 @@ pub fn write_switch_journal(source: Option<&str>, target: &str, phase: &str) -> 
             .map_err(|error| error.to_string())?
             .as_bytes(),
     )
+}
+
+pub fn recover_incomplete_switch() -> Result<(), String> {
+    let path = app_data_dir()?.join("switch-journal.json");
+    if !path.exists() {
+        return Ok(());
+    }
+    let journal: serde_json::Value =
+        serde_json::from_slice(&fs::read(&path).map_err(display_io("读取切换恢复日志失败"))?)
+            .map_err(|error| format!("切换恢复日志格式错误：{error}"))?;
+    let phase = journal
+        .get("phase")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    if phase == "prepared" {
+        clear_switch_journal();
+        return Ok(());
+    }
+    let target = journal
+        .get("targetAccountId")
+        .and_then(serde_json::Value::as_str);
+    let current = read_account_id(&auth_path()?).ok();
+    if current.as_deref() == target {
+        clear_switch_journal();
+        return Ok(());
+    }
+    if let Some(source) = journal
+        .get("sourceAccountId")
+        .and_then(serde_json::Value::as_str)
+    {
+        replace_live_auth(&target_auth(source)?)?;
+    }
+    clear_switch_journal();
+    Ok(())
+}
+
+pub fn has_switch_journal() -> bool {
+    app_data_dir().is_ok_and(|root| root.join("switch-journal.json").exists())
+}
+
+pub fn cleanup_stale_temp_dirs() {
+    let Ok(temp_root) = app_data_dir().map(|root| root.join("temp")) else {
+        return;
+    };
+    let Ok(entries) = fs::read_dir(&temp_root) else {
+        return;
+    };
+    let cutoff = SystemTime::now()
+        .checked_sub(Duration::from_secs(24 * 60 * 60))
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let is_stale = entry
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .is_ok_and(|modified| modified < cutoff);
+        if is_stale {
+            let _ = fs::remove_dir_all(path);
+        }
+    }
 }
 
 pub fn clear_switch_journal() {

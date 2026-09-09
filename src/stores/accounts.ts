@@ -65,6 +65,8 @@ export const useAccountStore = defineStore("accounts", {
         if (this.login.status === "completed") {
           window.clearInterval(loginTimer);
           await this.load();
+        } else if (this.login.status === "duplicate") {
+          window.clearInterval(loginTimer);
         } else if (this.login.status === "failed") {
           window.clearInterval(loginTimer);
         }
@@ -77,6 +79,14 @@ export const useAccountStore = defineStore("accounts", {
       window.clearInterval(loginTimer);
       await invoke("cancel_add_account");
       this.login = { status: "idle" };
+    },
+    async confirmDuplicate(overwrite: boolean) {
+      try {
+        this.login = await invoke<LoginProgress>("confirm_add_account", { overwrite });
+        if (this.login.status === "completed") await this.load();
+      } catch (error) {
+        this.login = { status: "failed", message: String(error) };
+      }
     },
     async switchTo(account: ManagedAccount) {
       if (account.isActive || this.switchingId) return;

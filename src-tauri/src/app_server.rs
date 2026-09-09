@@ -224,8 +224,16 @@ impl Drop for AppServerSession {
 }
 
 pub fn query_home(home: PathBuf) -> Result<ManagedAccount, String> {
-    let mut session = AppServerSession::start(home)?;
-    session.query_account()
+    let first_error = match AppServerSession::start(home.clone())
+        .and_then(|mut session| session.query_account())
+    {
+        Ok(account) => return Ok(account),
+        Err(error) => error,
+    };
+    thread::sleep(Duration::from_millis(180));
+    AppServerSession::start(home)
+        .and_then(|mut session| session.query_account())
+        .map_err(|second_error| format!("{second_error}（首次尝试：{first_error}）"))
 }
 
 pub fn current_codex_home() -> Result<PathBuf, String> {

@@ -1,12 +1,12 @@
 use crate::{
     AppState, PendingLogin,
     app_server::{AppServerSession, current_codex_home},
-    models::{DashboardState, LoginProgress, WindowPlacement},
-    process_manager, vault,
+    models::{DashboardState, LoginProgress, UserSettings, WindowPlacement},
+    process_manager, settings, vault,
 };
 use serde_json::json;
 use std::{fs, sync::MutexGuard, thread, time::Duration};
-use tauri::{PhysicalPosition, PhysicalSize, State, WebviewWindow};
+use tauri::{Emitter, LogicalSize, PhysicalPosition, State, WebviewWindow};
 use uuid::Uuid;
 
 #[tauri::command]
@@ -66,6 +66,8 @@ pub fn start_add_account(state: State<'_, AppState>) -> Result<LoginProgress, St
         home,
         auth_url: auth_url.clone(),
         login_id,
+        completed_account: None,
+        completed_auth: None,
     });
     Ok(LoginProgress::Waiting { auth_url })
 }
@@ -76,6 +78,11 @@ pub fn poll_add_account(state: State<'_, AppState>) -> Result<LoginProgress, Str
     let Some(pending) = guard.as_mut() else {
         return Ok(LoginProgress::Idle);
     };
+    if let Some(account) = pending.completed_account.as_ref() {
+        return Ok(LoginProgress::Duplicate {
+            account: Box::new(account.clone()),
+        });
+    }
     let Some(notification) = pending.session.take_notification("account/login/completed") else {
         return Ok(LoginProgress::Waiting {
             auth_url: pending.auth_url.clone(),
@@ -104,6 +111,37 @@ pub fn poll_add_account(state: State<'_, AppState>) -> Result<LoginProgress, Str
     let account = pending.session.query_account()?;
     let auth = fs::read(pending.home.join("auth.json"))
         .map_err(|error| format!("读取新账号登录态失败：{error}"))?;
+    if vault::has_account(&account.id)? {
+        pending.completed_account = Some(account.clone());
+        pending.completed_auth = Some(auth);
+        return Ok(LoginProgress::Duplicate {
+            account: Box::new(account),
+        });
+    }
+    vault::store_account(&account, &auth)?;
+    let result = LoginProgress::Completed {
+        account: Box::new(account),
+    };
+    cleanup_pending(&mut guard);
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn confirm_add_account(
+    overwrite: bool,
+    state: State<'_, AppState>,
+) -> Result<LoginProgress, String> {
+    let mut guard = state.pending_login.lock().map_err(|_| "登录状态锁已损坏")?;
+    if !overwrite {
+        cleanup_pending(&mut guard);
+        return Ok(LoginProgress::Idle);
+    }
+    let pending = guard.as_mut().ok_or("没有等待确认的重复账号")?;
+    let account = pending
+        .completed_account
+        .take()
+        .ok_or("重复账号信息不存在")?;
+    let auth = pending.completed_auth.take().ok_or("重复账号凭据不存在")?;
     vault::store_account(&account, &auth)?;
     let result = LoginProgress::Completed {
         account: Box::new(account),
@@ -130,10 +168,17 @@ pub fn cancel_add_account(state: State<'_, AppState>) -> Result<(), String> {
 pub fn switch_account(
     account_id: String,
     state: State<'_, AppState>,
+    window: WebviewWindow,
 ) -> Result<DashboardState, String> {
     let _guard = state.operation_lock.lock().map_err(|_| "操作锁已损坏")?;
+    if process_manager::is_codex_cli_running()? {
+        return Err("检测到正在运行的 Codex CLI；请先结束 CLI 任务再切换账号".to_string());
+    }
+    let _ = window.emit("switch-progress", "正在准备目标账号");
     let target = vault::target_auth(&account_id)?;
+    let _ = window.emit("switch-progress", "正在关闭 Codex Desktop");
     let was_running = process_manager::stop_codex_desktop()?;
+    let _ = window.emit("switch-progress", "正在保存当前账号");
     let outgoing_auth = fs::read(vault::auth_path()?).ok();
     let source_id = match vault::save_live_auth_to_vault() {
         Ok(source_id) => source_id,
@@ -158,32 +203,47 @@ pub fn switch_account(
         }
         return Err(error);
     }
-    vault::write_switch_journal(source_id.as_deref(), &account_id, "replaced")?;
+    let _ = window.emit("switch-progress", "正在应用目标账号");
+    if let Err(error) = vault::write_switch_journal(source_id.as_deref(), &account_id, "replaced") {
+        rollback_switch(outgoing_auth.as_deref(), was_running);
+        return Err(format!("记录切换状态失败，已恢复原账号：{error}"));
+    }
     if was_running {
-        process_manager::start_codex_desktop()?;
+        let _ = window.emit("switch-progress", "正在重新启动 Codex Desktop");
+        if let Err(error) = process_manager::start_codex_desktop() {
+            rollback_switch(outgoing_auth.as_deref(), was_running);
+            return Err(format!("Codex Desktop 启动失败，已恢复原账号：{error}"));
+        }
         thread::sleep(Duration::from_secs(2));
     }
+    let _ = window.emit("switch-progress", "正在验证目标账号");
     let verified = crate::app_server::query_home(current_codex_home()?)
         .is_ok_and(|account| account.id == account_id);
     if !verified {
-        if was_running {
-            let _ = process_manager::stop_codex_desktop();
-        }
-        if let Some(outgoing) = outgoing_auth {
-            let _ = vault::replace_live_auth(&outgoing);
-        }
-        if was_running {
-            let _ = process_manager::start_codex_desktop();
-        }
-        vault::clear_switch_journal();
+        rollback_switch(outgoing_auth.as_deref(), was_running);
+        let _ = window.emit("switch-progress", "切换失败，已恢复原账号");
         return Err("目标账号验证失败，已恢复原账号".to_string());
     }
     vault::clear_switch_journal();
+    let _ = window.emit("switch-progress", "账号切换完成");
     Ok(DashboardState {
         accounts: vault::refresh_all_accounts()?,
         codex_running: process_manager::is_codex_running(),
         refreshed_at: Some(unix_now()),
     })
+}
+
+fn rollback_switch(outgoing_auth: Option<&[u8]>, restart_codex: bool) {
+    if restart_codex {
+        let _ = process_manager::stop_codex_desktop();
+    }
+    if let Some(outgoing) = outgoing_auth {
+        let _ = vault::replace_live_auth(outgoing);
+    }
+    if restart_codex {
+        let _ = process_manager::start_codex_desktop();
+    }
+    vault::clear_switch_journal();
 }
 
 #[tauri::command]
@@ -192,6 +252,7 @@ pub fn set_window_mode(
     mode: String,
     current_horizontal: String,
     current_vertical: String,
+    expanded_height: f64,
 ) -> Result<WindowPlacement, String> {
     let position = window.outer_position().map_err(|error| error.to_string())?;
     let size = window.outer_size().map_err(|error| error.to_string())?;
@@ -200,13 +261,17 @@ pub fn set_window_mode(
         .map_err(|error| error.to_string())?
         .or_else(|| window.primary_monitor().ok().flatten())
         .ok_or("无法确定当前显示器")?;
-    let right_edge = monitor.position().x + monitor.size().width as i32;
-    let bottom_edge = monitor.position().y + monitor.size().height as i32;
-    let (width, height) = match mode.as_str() {
-        "hover" => (440_u32, 100_u32),
-        "expanded" => (440_u32, 380_u32),
-        _ => (92_u32, 92_u32),
+    let work_area = monitor.work_area();
+    let right_edge = work_area.position.x + work_area.size.width as i32;
+    let bottom_edge = work_area.position.y + work_area.size.height as i32;
+    let (logical_width, logical_height) = match mode.as_str() {
+        "hover" => (528.0, 96.0),
+        "expanded" => (528.0, expanded_height.clamp(166.0, 380.0)),
+        _ => (96.0, 96.0),
     };
+    let scale = monitor.scale_factor();
+    let width = (logical_width * scale).round() as u32;
+    let height = (logical_height * scale).round() as u32;
     let old_right = position.x + size.width as i32;
     let old_bottom = position.y + size.height as i32;
     let collapsing = mode == "idle" && (size.width > width || size.height > height);
@@ -217,29 +282,50 @@ pub fn set_window_mode(
     };
     let opens_up = if collapsing {
         current_vertical == "up"
+    } else if mode == "expanded" {
+        let space_up = old_bottom - work_area.position.y;
+        let space_down = bottom_edge - position.y;
+        space_up >= height as i32 || space_up >= space_down
     } else {
-        mode == "expanded" || old_bottom + height as i32 > bottom_edge
+        old_bottom + height as i32 > bottom_edge
     };
     let x = if opens_left {
         old_right - width as i32
     } else {
-        position.x
-    };
+        position.x.min(right_edge - width as i32)
+    }
+    .max(work_area.position.x);
     let y = if opens_up {
         old_bottom - height as i32
     } else {
-        position.y
-    };
+        position.y.min(bottom_edge - height as i32)
+    }
+    .max(work_area.position.y);
     window
         .set_position(PhysicalPosition::new(x, y))
         .map_err(|error| error.to_string())?;
     window
-        .set_size(PhysicalSize::new(width, height))
+        .set_size(LogicalSize::new(logical_width, logical_height))
         .map_err(|error| error.to_string())?;
     Ok(WindowPlacement {
         horizontal: if opens_left { "left" } else { "right" }.to_string(),
         vertical: if opens_up { "up" } else { "down" }.to_string(),
     })
+}
+
+#[tauri::command]
+pub fn get_settings() -> Result<UserSettings, String> {
+    settings::load_user_settings()
+}
+
+#[tauri::command]
+pub fn update_settings(settings: UserSettings) -> Result<UserSettings, String> {
+    crate::settings::update_user_settings(settings)
+}
+
+#[tauri::command]
+pub fn save_window_position(window: WebviewWindow) -> Result<(), String> {
+    settings::save_window_position(&window)
 }
 
 fn cleanup_pending(guard: &mut MutexGuard<'_, Option<PendingLogin>>) {

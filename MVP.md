@@ -70,7 +70,7 @@ MVP 必须优先保证账号凭据安全、用量数据准确、切换可回滚�
 
 ### 4.2 状态一：常驻悬浮球
 
-- 视觉尺寸约 64 × 64 px，实际窗口保留阴影和点击区域。
+- V3 实装圆球为 76 × 76 逻辑像素，实际窗口为 96 × 96，四周仅用于透明光晕和点击容差。
 - 中心显示产品图标。
 - 内外两个 SVG 圆环精确反映当前账号剩余百分比。
 - 右下角小圆点表示 Codex Desktop 进程状态：
@@ -86,7 +86,7 @@ MVP 必须优先保证账号凭据安全、用量数据准确、切换可回滚�
 ### 4.3 状态二：悬停摘要
 
 - 鼠标进入后由悬浮球向右展开；右侧空间不足时向左展开。
-- 整体为左右完全对称的胶囊形状，建议约 400 × 80 px。
+- 整体为左右完全对称的胶囊形状；V3 实装表面为 520 × 88 逻辑像素，以同时容纳统一对齐的额度信息和状态三操作列。
 - 悬浮球完整包含在胶囊内部，不得突出窗口边界。
 - 显示当前账号：
   - 邮箱或用户自定义别名。
@@ -114,6 +114,7 @@ MVP 必须优先保证账号凭据安全、用量数据准确、切换可回滚�
 - 邮箱、套餐、进度条、重置时间和按钮必须沿统一参考线对齐。
 - 非当前账号显示“切换”，当前账号显示等尺寸的“当前”状态。
 - 超过可显示账号数量时仅列表区域滚动，顶部操作栏和当前账号保持可见。
+- 面板高度随账号数量自然增长：单账号只在状态二上方增加操作栏，不保留空的大面板；最多同时显示 3 个账号，更多账号进入滚动区。
 
 ### 4.5 窗口状态切换
 
@@ -363,6 +364,7 @@ Commit and clear journal     Restore outgoing credential and relaunch
 ```text
 CodexAccountManager\
 ├── design\
+│   ├── app-icon.svg
 │   └── codex-account-manager-ui.png
 ├── scripts\
 │   ├── build-release.cmd
@@ -373,7 +375,8 @@ CodexAccountManager\
 │   │   ├── AccountPanel.vue
 │   │   ├── AccountRow.vue
 │   │   ├── QuotaRows.vue
-│   │   └── QuotaRing.vue
+│   │   ├── QuotaRing.vue
+│   │   └── SettingsView.vue
 │   ├── stores\accounts.ts
 │   ├── types\account.ts
 │   └── App.vue
@@ -382,12 +385,11 @@ CodexAccountManager\
 │       ├── app_server.rs
 │       ├── vault.rs
 │       ├── process_manager.rs
+│       ├── settings.rs
 │       ├── commands.rs
 │       ├── models.rs
 │       ├── lib.rs
 │       └── main.rs
-├── release\
-│   └── CodexAccountManager.exe
 ├── README.md
 └── MVP.md
 ```
@@ -427,8 +429,8 @@ CodexAccountManager\
 ### 当前实现状态（2026-09-09）
 
 - 阶段一至阶段四的 MVP 主流程已落地，界面直接使用真实账号数据，不注入模拟账号。
-- 阶段五已实现系统托盘；开机启动、设置页、位置持久化、完整 DPI/多显示器回归尚未纳入当前开发版。
-- 当前仅生成 `release/CodexAccountManager.exe` 便携程序，暂不制作安装包、不签名。
+- 阶段五已实现系统托盘、设置页、开机启动选项，以及按显示器和 DPI 保存悬浮球位置；完整多显示器回归仍需持续测试。
+- 当前仅生成 `src-tauri/target/release/codex-account-manager.exe`，不在项目根目录复制产物，暂不制作安装包、不签名。
 - 已加入额度换算、账号目录名清理和 Windows DPAPI 加解密单元测试；破坏性故障注入与真实多账号端到端回归仍需在测试账号环境执行。
 
 ## 14. MVP 验收标准
