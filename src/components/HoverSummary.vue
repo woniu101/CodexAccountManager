@@ -26,19 +26,19 @@ defineEmits<{ expand: [] }>();
 
 <style scoped>
 .summary {
-  width: 456px;
-  height: 88px;
-  padding: 6px;
+  width: 416px;
+  height: 80px;
+  padding: 4px;
   display: grid;
-  grid-template-columns: 76px 1fr;
+  grid-template-columns: 72px 1fr;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   cursor: pointer;
 }
 .pill { border-radius: 999px; }
-.summary-content { min-width: 0; padding-right: 12px; display: grid; gap: 9px; }
+.summary-content { min-width: 0; padding-right: 10px; display: grid; gap: 7px; }
 header { display: flex; align-items: center; gap: 10px; min-width: 0; }
-strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #f5f8fd; font-size: 14px; }
+strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #f5f8fd; font-size: 13px; }
 .plan { border: 1px solid #8565ec; background: #332264; color: #f0eaff; border-radius: 6px; padding: 2px 7px; font-size: 10px; font-weight: 750; }
 .empty-summary { display: grid; gap: 4px; text-align: left; }
 .empty-summary span { color: #96a4b8; font-size: 12px; }

@@ -49,23 +49,14 @@ const statusText = computed(() => ({
 <style scoped>
 .quota-orb {
   position: relative;
-  width: 76px;
-  height: 76px;
-  flex: 0 0 76px;
+  width: 72px;
+  height: 72px;
+  flex: 0 0 72px;
   border-radius: 50%;
   background: radial-gradient(circle at 36% 28%, #263143 0, #151d29 56%, #0b111a 100%);
-  box-shadow: inset 0 0 0 1px rgba(206, 223, 246, .18), 0 7px 19px rgba(0, 0, 0, .48);
+  box-shadow: inset 0 0 0 1px rgba(206, 223, 246, .18);
   animation: orb-breathe 4s ease-in-out infinite;
   isolation: isolate;
-}
-.quota-orb::before {
-  content: "";
-  position: absolute;
-  inset: -2px;
-  z-index: -1;
-  border-radius: inherit;
-  box-shadow: 0 0 9px rgba(83, 210, 255, .16), 0 0 15px rgba(146, 105, 255, .1);
-  animation: aura-breathe 4s ease-in-out infinite;
 }
 svg { display: block; position: relative; z-index: 1; width: 100%; height: 100%; overflow: visible; }
 .ring-track, .ring {
@@ -77,8 +68,8 @@ svg { display: block; position: relative; z-index: 1; width: 100%; height: 100%;
 .ring-track { stroke: #30394a; }
 .ring-track.inner { stroke: #293544; }
 .ring { stroke-linecap: round; transition: stroke-dasharray .55s ease-out; }
-.ring.five { stroke: #4dd7ff; filter: drop-shadow(0 0 2px rgba(77, 215, 255, .42)); }
-.ring.weekly { stroke: #9a7bff; filter: drop-shadow(0 0 2px rgba(154, 123, 255, .38)); }
+.ring.five { stroke: #4dd7ff; }
+.ring.weekly { stroke: #9a7bff; }
 .chatgpt-mark { fill: #f7f9fc; overflow: visible; animation: mark-breathe 4s ease-in-out infinite; }
 .process-dot-border { fill: #121924; }
 .process-dot { transition: fill .2s ease, opacity .2s ease; }
@@ -87,10 +78,9 @@ svg { display: block; position: relative; z-index: 1; width: 100%; height: 100%;
 .process-dot.switching { fill: #f4bf4f; animation: status-breathe 1.2s ease-in-out infinite; }
 .process-dot.error { fill: #ff626d; }
 @keyframes orb-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.015); } }
-@keyframes aura-breathe { 0%, 100% { opacity: .5; transform: scale(.99); } 50% { opacity: 1; transform: scale(1.02); } }
 @keyframes mark-breathe { 0%, 100% { opacity: .94; } 50% { opacity: 1; } }
 @keyframes status-breathe { 0%, 100% { opacity: .78; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-  .quota-orb, .quota-orb::before, .chatgpt-mark, .process-dot { animation: none; }
+  .quota-orb, .chatgpt-mark, .process-dot { animation: none; }
 }
 </style>

@@ -49,15 +49,15 @@ const freshness = computed(() => {
 
 <style scoped>
 .account-row {
-  min-height: 102px;
+  min-height: 94px;
   display: grid;
-  grid-template-columns: 78px minmax(0, 1fr) 64px;
+  grid-template-columns: 72px minmax(0, 1fr) 56px;
   align-items: center;
-  gap: 8px;
-  padding: 7px 10px 7px 8px;
+  gap: 6px;
+  padding: 6px 8px 6px 6px;
   border-top: 1px solid rgba(145, 161, 183, .25);
 }
-.identity { width: 76px; display: grid; place-items: center; }
+.identity { width: 72px; display: grid; place-items: center; }
 .account-row.active .identity { cursor: pointer; }
 .initial {
   width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center;
@@ -65,13 +65,13 @@ const freshness = computed(() => {
   background: linear-gradient(145deg, #303b4d, #1d2532);
   border: 1px solid #47546a;
 }
-.account-content { display: grid; gap: 8px; min-width: 0; }
+.account-content { display: grid; gap: 7px; min-width: 0; }
 header { display: flex; align-items: center; gap: 9px; min-width: 0; }
 strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .plan { border: 1px solid #8062e8; color: #ece7ff; background: #30225e; border-radius: 6px; padding: 2px 7px; font-size: 10px; font-weight: 750; }
-.action { width: 60px; height: 32px; border-radius: 8px; border: 1px solid #1685ff; color: white; background: #087ef5; font-size: 12px; cursor: pointer; }
+.action { justify-self: end; width: 52px; height: 30px; padding: 0; border-radius: 9px; border: 1px solid #1685ff; color: white; background: #087ef5; font-size: 12px; font-weight: 600; cursor: pointer; }
 .action:hover:not(:disabled) { background: #2392ff; }
-.action.current { border-color: #2fbf86; color: #66e5ad; background: rgba(24, 139, 94, .18); }
+.action.current { border-color: rgba(47, 191, 134, .8); color: #66e5ad; background: rgba(24, 139, 94, .12); }
 .action:disabled { cursor: default; opacity: .9; }
 small { color: #e8a96d; font-size: 10px; }
 </style>

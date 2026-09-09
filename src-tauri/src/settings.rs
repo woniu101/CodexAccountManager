@@ -104,8 +104,8 @@ pub fn restore_window_position(window: &WebviewWindow) -> Result<(), String> {
         .or_else(|| monitors.first())
         .ok_or("没有可用显示器")?;
     let area = monitor.work_area();
-    let width = (96.0 * monitor.scale_factor()).round() as i32;
-    let height = (96.0 * monitor.scale_factor()).round() as i32;
+    let width = (80.0 * monitor.scale_factor()).round() as i32;
+    let height = (80.0 * monitor.scale_factor()).round() as i32;
     let x = saved.x.clamp(
         area.position.x,
         area.position.x + area.size.width as i32 - width,

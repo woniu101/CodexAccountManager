@@ -10,7 +10,7 @@ use tauri::{Emitter, PhysicalPosition, State, WebviewWindow};
 use uuid::Uuid;
 
 #[tauri::command]
-pub fn load_dashboard(state: State<'_, AppState>) -> Result<DashboardState, String> {
+pub async fn load_dashboard(state: State<'_, AppState>) -> Result<DashboardState, String> {
     let _guard = state.operation_lock.lock().map_err(|_| "操作锁已损坏")?;
     Ok(DashboardState {
         accounts: vault::refresh_all_accounts()?,
@@ -20,7 +20,7 @@ pub fn load_dashboard(state: State<'_, AppState>) -> Result<DashboardState, Stri
 }
 
 #[tauri::command]
-pub fn import_current_account(state: State<'_, AppState>) -> Result<DashboardState, String> {
+pub async fn import_current_account(state: State<'_, AppState>) -> Result<DashboardState, String> {
     let _guard = state.operation_lock.lock().map_err(|_| "操作锁已损坏")?;
     vault::import_current_account()?;
     Ok(DashboardState {
@@ -31,7 +31,7 @@ pub fn import_current_account(state: State<'_, AppState>) -> Result<DashboardSta
 }
 
 #[tauri::command]
-pub fn start_add_account(state: State<'_, AppState>) -> Result<LoginProgress, String> {
+pub async fn start_add_account(state: State<'_, AppState>) -> Result<LoginProgress, String> {
     let mut pending = state.pending_login.lock().map_err(|_| "登录状态锁已损坏")?;
     if pending.is_some() {
         return Err("已有账号登录正在进行".to_string());
@@ -73,7 +73,7 @@ pub fn start_add_account(state: State<'_, AppState>) -> Result<LoginProgress, St
 }
 
 #[tauri::command]
-pub fn poll_add_account(state: State<'_, AppState>) -> Result<LoginProgress, String> {
+pub async fn poll_add_account(state: State<'_, AppState>) -> Result<LoginProgress, String> {
     let mut guard = state.pending_login.lock().map_err(|_| "登录状态锁已损坏")?;
     let Some(pending) = guard.as_mut() else {
         return Ok(LoginProgress::Idle);
@@ -127,7 +127,7 @@ pub fn poll_add_account(state: State<'_, AppState>) -> Result<LoginProgress, Str
 }
 
 #[tauri::command]
-pub fn confirm_add_account(
+pub async fn confirm_add_account(
     overwrite: bool,
     state: State<'_, AppState>,
 ) -> Result<LoginProgress, String> {
@@ -151,7 +151,7 @@ pub fn confirm_add_account(
 }
 
 #[tauri::command]
-pub fn cancel_add_account(state: State<'_, AppState>) -> Result<(), String> {
+pub async fn cancel_add_account(state: State<'_, AppState>) -> Result<(), String> {
     let mut guard = state.pending_login.lock().map_err(|_| "登录状态锁已损坏")?;
     if let Some(pending) = guard.as_mut() {
         let _ = pending.session.request(
@@ -165,7 +165,7 @@ pub fn cancel_add_account(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn switch_account(
+pub async fn switch_account(
     account_id: String,
     state: State<'_, AppState>,
     window: WebviewWindow,
@@ -265,9 +265,9 @@ pub fn set_window_mode(
     let right_edge = work_area.position.x + work_area.size.width as i32;
     let bottom_edge = work_area.position.y + work_area.size.height as i32;
     let (logical_width, logical_height) = match mode.as_str() {
-        "hover" => (464.0, 96.0),
-        "expanded" => (464.0, expanded_height.clamp(166.0, 380.0)),
-        _ => (96.0, 96.0),
+        "hover" => (424.0, 88.0),
+        "expanded" => (424.0, expanded_height.clamp(156.0, 340.0)),
+        _ => (80.0, 80.0),
     };
     let scale = monitor.scale_factor();
     let width = (logical_width * scale).round() as u32;
@@ -390,7 +390,7 @@ fn idle_anchor(
     mode: &str,
     horizontal: &str,
 ) -> PhysicalPosition<i32> {
-    let idle_size = (96.0 * scale).round() as i32;
+    let idle_size = (80.0 * scale).round() as i32;
     let x = if mode != "idle" && horizontal == "left" {
         position.x + size.width as i32 - idle_size
     } else {
@@ -426,19 +426,19 @@ mod tests {
     fn expanded_left_window_saves_the_idle_orb_anchor() {
         let anchor = idle_anchor(
             PhysicalPosition::new(100, 200),
-            PhysicalSize::new(696, 360),
+            PhysicalSize::new(636, 360),
             1.5,
             "expanded",
             "left",
         );
-        assert_eq!(anchor, PhysicalPosition::new(652, 416));
+        assert_eq!(anchor, PhysicalPosition::new(616, 440));
     }
 
     #[test]
     fn idle_window_saves_its_top_left_position() {
         let anchor = idle_anchor(
             PhysicalPosition::new(320, 240),
-            PhysicalSize::new(144, 144),
+            PhysicalSize::new(120, 120),
             1.5,
             "idle",
             "right",

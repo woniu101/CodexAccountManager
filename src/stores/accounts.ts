@@ -4,6 +4,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import type { DashboardState, LoginProgress, ManagedAccount } from "../types/account";
 
 let loginTimer: number | undefined;
+let loginPolling = false;
 
 export const useAccountStore = defineStore("accounts", {
   state: () => ({
@@ -12,6 +13,7 @@ export const useAccountStore = defineStore("accounts", {
     refreshedAt: undefined as number | undefined,
     loading: false,
     switchingId: undefined as string | undefined,
+    addingAccount: false,
     login: { status: "idle" } as LoginProgress,
     error: undefined as string | undefined,
   }),
@@ -25,6 +27,7 @@ export const useAccountStore = defineStore("accounts", {
       this.refreshedAt = dashboard.refreshedAt;
     },
     async load() {
+      if (this.loading) return;
       this.loading = true;
       this.error = undefined;
       try {
@@ -47,7 +50,9 @@ export const useAccountStore = defineStore("accounts", {
       }
     },
     async startAddAccount() {
+      if (this.addingAccount || this.login.status === "waiting") return;
       this.error = undefined;
+      this.addingAccount = true;
       try {
         this.login = await invoke<LoginProgress>("start_add_account");
         if (this.login.status === "waiting") {
@@ -62,14 +67,19 @@ export const useAccountStore = defineStore("accounts", {
         }
       } catch (error) {
         this.login = { status: "failed", message: String(error) };
+      } finally {
+        this.addingAccount = false;
       }
     },
     async pollLogin() {
+      if (loginPolling) return;
+      loginPolling = true;
       try {
         this.login = await invoke<LoginProgress>("poll_add_account");
         if (this.login.status === "completed") {
           window.clearInterval(loginTimer);
           await this.load();
+          this.login = { status: "idle" };
         } else if (this.login.status === "duplicate") {
           window.clearInterval(loginTimer);
         } else if (this.login.status === "failed") {
@@ -78,6 +88,8 @@ export const useAccountStore = defineStore("accounts", {
       } catch (error) {
         window.clearInterval(loginTimer);
         this.login = { status: "failed", message: String(error) };
+      } finally {
+        loginPolling = false;
       }
     },
     async cancelLogin() {

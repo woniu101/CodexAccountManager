@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import type { ManagedAccount, ProcessState, UserSettings } from "../types/account";
+import type { LoginProgress, ManagedAccount, ProcessState, UserSettings } from "../types/account";
 import AccountRow from "./AccountRow.vue";
 import SettingsView from "./SettingsView.vue";
 
@@ -12,6 +12,8 @@ const props = defineProps<{
   settingsOpen: boolean;
   settings: UserSettings;
   savingSettings: boolean;
+  login: LoginProgress;
+  addingAccount: boolean;
 }>();
 const emit = defineEmits<{
   add: [];
@@ -21,6 +23,7 @@ const emit = defineEmits<{
   updateSettings: [settings: UserSettings];
   refresh: [];
   collapse: [];
+  cancelLogin: [];
 }>();
 
 const current = computed(() => props.accounts.find((account) => account.isActive));
@@ -30,7 +33,17 @@ const others = computed(() => props.accounts.filter((account) => !account.isActi
 <template>
   <section class="account-panel">
     <nav class="panel-actions">
-      <button :class="{ active: !settingsOpen }" @click.stop="emit('add')">
+      <button v-if="addingAccount" class="login-progress active" disabled>
+        <span class="spinner" /> 正在准备授权
+      </button>
+      <button
+        v-else-if="login.status === 'waiting'"
+        class="login-progress active"
+        @click.stop="emit('cancelLogin')"
+      >
+        <span class="spinner" /> 等待授权 <em>取消</em>
+      </button>
+      <button v-else :class="{ active: !settingsOpen }" @click.stop="emit('add')">
         <span class="action-icon">＋</span> 添加账号
       </button>
       <button :class="{ active: settingsOpen }" @click.stop="emit('settings')">
@@ -79,14 +92,19 @@ const others = computed(() => props.accounts.filter((account) => !account.isActi
 </template>
 
 <style scoped>
-.account-panel { width: 456px; height: 100%; overflow: hidden; border-radius: 20px 20px 38px 38px; display: flex; flex-direction: column; }
-.panel-actions { height: 56px; flex: 0 0 56px; display: grid; grid-template-columns: 1fr 1fr; }
+.account-panel { width: 416px; height: 100%; overflow: hidden; border-radius: 32px; display: flex; flex-direction: column; }
+.panel-actions { height: 52px; flex: 0 0 52px; display: grid; grid-template-columns: 1fr 1fr; }
 .panel-actions button { position: relative; border: 0; color: #dce5f1; background: transparent; cursor: pointer; font-size: 13px; }
 .panel-actions button + button { border-left: 1px solid rgba(145, 161, 183, .24); }
 .panel-actions button:hover, .panel-actions button.active { background: rgba(255, 255, 255, .035); color: #f5f8fc; }
 .panel-actions button.active::after { content: ""; position: absolute; left: 35%; right: 35%; bottom: 0; height: 2px; border-radius: 2px; background: #4dd7ff; opacity: .75; }
 .action-icon { display: inline-block; margin-right: 8px; font-size: 20px; font-weight: 350; vertical-align: -1px; }
 .action-icon.gear { font-size: 16px; }
+.panel-actions .login-progress { color: #dce8f5; }
+.panel-actions .login-progress:disabled { cursor: wait; }
+.panel-actions .login-progress em { margin-left: 7px; color: #4dd7ff; font-size: 11px; font-style: normal; }
+.spinner { display: inline-block; width: 12px; height: 12px; margin-right: 7px; border: 2px solid #3b526b; border-top-color: #4dd7ff; border-radius: 50%; vertical-align: -2px; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .accounts-body { display: flex; flex: 1; min-height: 0; flex-direction: column; border-top: 1px solid rgba(145, 161, 183, .24); }
 .other-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #46566c transparent; }
 .current-row { flex: 0 0 auto; background: rgba(16, 23, 33, .72); border-top-color: rgba(166, 185, 211, .36); }

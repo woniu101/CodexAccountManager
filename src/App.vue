@@ -19,6 +19,7 @@ const toast = ref<string>();
 const switchStage = ref<string>();
 const settingsOpen = ref(false);
 const savingSettings = ref(false);
+const pendingSwitch = ref<ManagedAccount>();
 const settings = ref<UserSettings>({
   refreshIntervalMinutes: 5,
   launchAtLogin: false,
@@ -51,9 +52,10 @@ const processState = computed<ProcessState>(() => {
   return store.codexRunning ? "running" : "stopped";
 });
 const expandedSurfaceHeight = computed(() => {
-  if (settingsOpen.value) return 320;
-  if (!store.accounts.length) return 260;
-  return 56 + 102 * Math.min(store.accounts.length, 3);
+  if (pendingSwitch.value) return 224;
+  if (settingsOpen.value) return 304;
+  if (!store.accounts.length) return 230;
+  return 52 + 94 * Math.min(store.accounts.length, 3);
 });
 
 async function setMode(nextMode: WindowMode, force = false) {
@@ -173,9 +175,7 @@ async function addAccount() {
   settingsOpen.value = false;
   await nextTick();
   await setMode("expanded", mode.value === "expanded");
-  toast.value = "正在准备浏览器授权…";
   await store.startAddAccount();
-  toast.value = store.login.status === "waiting" ? "已打开浏览器，正在等待授权…" : undefined;
 }
 async function showSettings() {
   settingsOpen.value = !settingsOpen.value;
@@ -209,13 +209,27 @@ async function updateSettings(next: UserSettings) {
   }
 }
 async function switchAccount(account: ManagedAccount) {
-  const confirmed = window.confirm(
-    `切换到 ${account.alias || account.email}？\n\n这会关闭并重新启动 Codex Desktop，可能中断正在运行的任务。`,
-  );
-  if (confirmed) await store.switchTo(account);
+  pendingSwitch.value = account;
+  await nextTick();
+  await setMode("expanded", true);
+}
+async function closeSwitchConfirm() {
+  pendingSwitch.value = undefined;
+  await nextTick();
+  await setMode("expanded", true);
+}
+async function confirmSwitch() {
+  const account = pendingSwitch.value;
+  if (!account) return;
+  pendingSwitch.value = undefined;
+  await nextTick();
+  await setMode("expanded", true);
+  await store.switchTo(account);
 }
 function onKeydown(event: KeyboardEvent) {
-  if (event.key === "Escape") void setMode("idle");
+  if (event.key !== "Escape") return;
+  if (pendingSwitch.value) void closeSwitchConfirm();
+  else void setMode("idle");
 }
 
 onMounted(async () => {
@@ -291,6 +305,8 @@ onBeforeUnmount(() => {
         :settings-open="settingsOpen"
         :settings="settings"
         :saving-settings="savingSettings"
+        :login="store.login"
+        :adding-account="store.addingAccount"
         @add="addAccount"
         @settings="showSettings"
         @import-current="store.importCurrent()"
@@ -298,11 +314,23 @@ onBeforeUnmount(() => {
         @update-settings="updateSettings"
         @refresh="store.load()"
         @collapse="setMode('idle')"
+        @cancel-login="store.cancelLogin()"
       />
+      <div v-if="pendingSwitch" class="confirm-layer" @click.self="closeSwitchConfirm">
+        <section class="confirm-card" role="dialog" aria-modal="true" aria-labelledby="switch-title">
+          <span class="confirm-icon">⇄</span>
+          <div class="confirm-copy">
+            <strong id="switch-title">切换 Codex 账号</strong>
+            <span>{{ pendingSwitch.alias || pendingSwitch.email }}</span>
+            <small>Codex Desktop 将关闭并重新启动，正在运行的任务可能中断。</small>
+          </div>
+          <div class="confirm-actions">
+            <button class="secondary" @click="closeSwitchConfirm">取消</button>
+            <button class="primary" @click="confirmSwitch">确认切换</button>
+          </div>
+        </section>
+      </div>
       <p v-if="store.error" class="notice error" :title="store.error">{{ store.error }}</p>
-      <p v-else-if="store.login.status === 'waiting'" class="notice">
-        等待浏览器授权… <button @click="store.cancelLogin()">取消</button>
-      </p>
       <p v-else-if="store.login.status === 'duplicate'" class="notice">
         账号 {{ store.login.account.email }} 已存在，是否更新凭据？
         <button @click="store.confirmDuplicate(true)">更新</button>

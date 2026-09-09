@@ -49,22 +49,22 @@ const reset = (quota?: QuotaWindow) => {
 </template>
 
 <style scoped>
-.quota-rows { display: grid; gap: 7px; min-width: 0; }
+.quota-rows { display: grid; gap: 6px; min-width: 0; }
 .quota-row {
   display: grid;
-  grid-template-columns: 18px 88px minmax(44px, 1fr) 84px;
+  grid-template-columns: 16px 80px minmax(38px, 1fr) 68px;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
   color: #dce5f2;
   font-size: 12px;
   line-height: 1;
 }
-.quota-icon { width: 18px; height: 18px; fill: none; stroke: #e6edf7; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.quota-icon { width: 16px; height: 16px; fill: none; stroke: #e6edf7; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .quota-label { white-space: nowrap; }
 .bar { display: block; height: 6px; border-radius: 999px; background: #293647; overflow: hidden; }
 .bar i { display: block; height: 100%; border-radius: inherit; transition: width .45s ease-out; }
 .bar .five { background: #4dd7ff; }
 .bar .weekly { background: #9a7bff; }
-time { text-align: right; color: #aeb9c9; white-space: nowrap; font-size: 10px; }
+time { text-align: left; color: #aeb9c9; white-space: nowrap; font-size: 10px; }
 </style>

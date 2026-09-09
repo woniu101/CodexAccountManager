@@ -12,7 +12,23 @@ pub fn is_codex_running() -> bool {
 }
 
 pub fn is_codex_cli_running() -> Result<bool, String> {
-    let script = "$items=Get-CimInstance Win32_Process -Filter \"Name='codex.exe'\" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -notlike '*app-server*' }; $items.ProcessId";
+    let script = r#"
+$all = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue
+$items = $all | Where-Object { $_.Name -eq 'codex.exe' -and $_.CommandLine -notlike '*app-server*' }
+foreach ($item in $items) {
+  $cursor = $item
+  $ownedByDesktop = $false
+  for ($depth = 0; $depth -lt 8 -and $cursor; $depth++) {
+    if ($cursor.Name -eq 'ChatGPT.exe' -and $cursor.ExecutablePath -and ($cursor.ExecutablePath -like '*\OpenAI.Codex_*' -or $cursor.ExecutablePath -like '*\OpenAI\Codex\*')) {
+      $ownedByDesktop = $true
+      break
+    }
+    $parentId = $cursor.ParentProcessId
+    $cursor = $all | Where-Object { $_.ProcessId -eq $parentId } | Select-Object -First 1
+  }
+  if (-not $ownedByDesktop) { $item.ProcessId }
+}
+"#;
     let output = Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", script])
         .creation_flags(CREATE_NO_WINDOW)
