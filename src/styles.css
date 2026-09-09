@@ -1,0 +1,46 @@
+:root {
+  font-family: Inter, "Segoe UI Variable", "Microsoft YaHei UI", system-ui, sans-serif;
+  color: #eef4fc;
+  background: transparent;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+* { box-sizing: border-box; }
+html, body, #app { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+button { font: inherit; }
+.stage { width: 100%; height: 100%; display: flex; padding: 6px; pointer-events: none; }
+.stage > * { pointer-events: auto; }
+.stage.opens-right { justify-content: flex-start; }
+.stage.opens-left { justify-content: flex-end; }
+.stage.opens-up { align-items: flex-end; }
+.stage.opens-down { align-items: flex-start; }
+.stage.mode-idle { align-items: center; justify-content: center; }
+.orb-button { width: 80px; height: 80px; padding: 2px; border: 0; border-radius: 50%; background: transparent; cursor: grab; }
+.orb-button:active { cursor: grabbing; }
+.glass {
+  background: linear-gradient(145deg, rgba(27, 34, 45, .97), rgba(15, 21, 30, .98));
+  border: 1px solid rgba(154, 174, 202, .44);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .025), 0 12px 34px rgba(0, 0, 0, .42);
+  backdrop-filter: blur(20px);
+}
+.hover-shell { width: 428px; height: 88px; border-radius: 999px; animation: reveal-pill .2s ease-out; }
+.expanded-shell { width: 428px; max-height: 368px; position: relative; border-radius: 20px 20px 38px 38px; animation: reveal-panel .24s ease-out; }
+.collapse {
+  position: absolute; right: 10px; top: 8px; width: 26px; height: 26px; border: 0; border-radius: 50%;
+  color: #8795a8; background: transparent; cursor: pointer; opacity: 0; transition: opacity .15s, background .15s;
+}
+.expanded-shell:hover .collapse { opacity: 1; }
+.collapse:hover { background: rgba(255, 255, 255, .07); color: white; }
+.notice {
+  position: absolute; left: 14px; right: 14px; bottom: 8px; margin: 0; padding: 7px 10px; border-radius: 8px;
+  color: #dce7f6; background: rgba(23, 32, 44, .96); border: 1px solid #3a485c; font-size: 11px;
+  text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.notice.error { color: #ffc7a3; border-color: #7c4934; }
+.notice button { border: 0; color: #69c5ff; background: none; cursor: pointer; }
+@keyframes reveal-pill { from { opacity: .5; transform: scaleX(.88); transform-origin: left center; } to { opacity: 1; transform: scaleX(1); } }
+@keyframes reveal-panel { from { opacity: .65; clip-path: inset(calc(100% - 88px) 0 0 0 round 38px); } to { opacity: 1; clip-path: inset(0 0 0 0 round 20px); } }
+@media (prefers-reduced-motion: reduce) { .hover-shell, .expanded-shell { animation: none; } }
