@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import AccountPanel from "./components/AccountPanel.vue";
@@ -26,11 +27,18 @@ const settings = ref<UserSettings>({
 let hoverTimer: number | undefined;
 let refreshTimer: number | undefined;
 const unlisteners: UnlistenFn[] = [];
-let pointerOrigin: { x: number; y: number } | undefined;
-let pointerMode: WindowMode = "idle";
-let dragged = false;
-let suppressHoverUntil = 0;
-let suppressClickUntil = 0;
+let dragStart: {
+  pointerId: number;
+  screenX: number;
+  screenY: number;
+  windowX: number;
+  windowY: number;
+  target: HTMLElement;
+  moved: boolean;
+} | undefined;
+let pendingDragPosition: PhysicalPosition | undefined;
+let dragFrame: number | undefined;
+let dragWriteInFlight = false;
 
 const stageClass = computed(() => [
   `mode-${mode.value}`,
@@ -51,14 +59,6 @@ const expandedSurfaceHeight = computed(() => {
 async function setMode(nextMode: WindowMode, force = false) {
   window.clearTimeout(hoverTimer);
   if (mode.value === nextMode && !force) return;
-  if (nextMode === "expanded" && mode.value === "idle") {
-    await setMode("hover");
-    await new Promise((resolve) => window.setTimeout(resolve, 70));
-  }
-  if (nextMode === "idle") {
-    mode.value = nextMode;
-    await nextTick();
-  }
   try {
     placement.value = await invoke<WindowPlacement>("set_window_mode", {
       mode: nextMode,
@@ -77,68 +77,105 @@ async function setMode(nextMode: WindowMode, force = false) {
 }
 
 function scheduleHover() {
-  if (mode.value !== "idle" || pointerOrigin || Date.now() < suppressHoverUntil) return;
-  hoverTimer = window.setTimeout(() => void setMode("hover"), 260);
+  if (mode.value !== "idle" || dragStart) return;
+  hoverTimer = window.setTimeout(() => void setMode("hover"), 220);
 }
 function scheduleIdle() {
-  if (mode.value !== "hover") return;
-  hoverTimer = window.setTimeout(() => void setMode("idle"), 300);
+  if (mode.value !== "hover" || dragStart) return;
+  hoverTimer = window.setTimeout(() => void setMode("idle"), 260);
 }
 function cancelHoverTimer() { window.clearTimeout(hoverTimer); }
 
-function beginPointer(event: PointerEvent) {
-  if (event.button !== 0 || mode.value === "expanded") return;
-  if (
-    mode.value === "hover"
-    && !event.composedPath().some((item) => item instanceof HTMLElement && item.classList.contains("quota-orb"))
-  ) return;
+async function beginRightDrag(event: PointerEvent) {
+  if (event.button !== 2 || dragStart) return;
   event.preventDefault();
-  pointerMode = mode.value;
-  pointerOrigin = { x: event.screenX, y: event.screenY };
-  dragged = false;
+  event.stopPropagation();
   cancelHoverTimer();
-  window.addEventListener("pointermove", trackPointer);
-  window.addEventListener("pointerup", endPointer, { once: true });
+  try {
+    const target = event.currentTarget as HTMLElement;
+    const position = await getCurrentWindow().outerPosition();
+    target.setPointerCapture(event.pointerId);
+    dragStart = {
+      pointerId: event.pointerId,
+      screenX: event.screenX,
+      screenY: event.screenY,
+      windowX: position.x,
+      windowY: position.y,
+      target,
+      moved: false,
+    };
+  } catch (error) {
+    store.error = `准备拖动窗口失败：${String(error)}`;
+  }
 }
-async function trackPointer(event: PointerEvent) {
-  if (!pointerOrigin || dragged) return;
-  if (Math.hypot(event.screenX - pointerOrigin.x, event.screenY - pointerOrigin.y) > 4) {
-    dragged = true;
-    pointerOrigin = undefined;
-    window.removeEventListener("pointermove", trackPointer);
-    window.removeEventListener("pointerup", endPointer);
-    try {
-      await getCurrentWindow().startDragging();
-      if (pointerMode === "hover") await setMode("idle");
-      await invoke("save_window_position");
-    } catch (error) {
-      store.error = `拖动悬浮球失败：${String(error)}`;
-    } finally {
-      suppressHoverUntil = Date.now() + 500;
-      suppressClickUntil = Date.now() + 500;
-      window.setTimeout(() => { dragged = false; }, 0);
+
+function queueDragPosition(event: PointerEvent) {
+  if (!dragStart || event.pointerId !== dragStart.pointerId) return;
+  event.preventDefault();
+  const scale = window.devicePixelRatio || 1;
+  const deltaX = (event.screenX - dragStart.screenX) * scale;
+  const deltaY = (event.screenY - dragStart.screenY) * scale;
+  if (Math.hypot(deltaX, deltaY) > 2) dragStart.moved = true;
+  pendingDragPosition = new PhysicalPosition(
+    Math.round(dragStart.windowX + deltaX),
+    Math.round(dragStart.windowY + deltaY),
+  );
+  if (dragFrame === undefined) dragFrame = window.requestAnimationFrame(() => void flushDragPosition());
+}
+
+async function flushDragPosition() {
+  dragFrame = undefined;
+  if (dragWriteInFlight || !pendingDragPosition) return;
+  const position = pendingDragPosition;
+  pendingDragPosition = undefined;
+  dragWriteInFlight = true;
+  try {
+    await getCurrentWindow().setPosition(position);
+  } catch (error) {
+    store.error = `拖动窗口失败：${String(error)}`;
+  } finally {
+    dragWriteInFlight = false;
+    if (pendingDragPosition && dragFrame === undefined) {
+      dragFrame = window.requestAnimationFrame(() => void flushDragPosition());
     }
   }
 }
 
-function expandFromSurface() {
-  if (Date.now() >= suppressClickUntil) void setMode("expanded");
-}
-function endPointer() {
-  window.removeEventListener("pointermove", trackPointer);
-  window.removeEventListener("pointerup", endPointer);
-  const shouldExpand = Boolean(pointerOrigin) && !dragged;
-  pointerOrigin = undefined;
-  window.setTimeout(() => { dragged = false; }, 0);
-  if (shouldExpand) void setMode("expanded");
+async function endRightDrag(event: PointerEvent) {
+  if (!dragStart || event.pointerId !== dragStart.pointerId) return;
+  event.preventDefault();
+  const { target, pointerId, moved } = dragStart;
+  dragStart = undefined;
+  if (target.hasPointerCapture(pointerId)) target.releasePointerCapture(pointerId);
+  if (!moved) return;
+  if (dragFrame !== undefined) {
+    window.cancelAnimationFrame(dragFrame);
+    dragFrame = undefined;
+  }
+  await flushDragPosition();
+  while (dragWriteInFlight || pendingDragPosition) {
+    await new Promise((resolve) => window.setTimeout(resolve, 16));
+    await flushDragPosition();
+  }
+  try {
+    await invoke("save_window_position", {
+      mode: mode.value,
+      horizontal: placement.value.horizontal,
+    });
+    toast.value = "悬浮窗位置已保存";
+    window.setTimeout(() => { toast.value = undefined; }, 1200);
+  } catch (error) {
+    store.error = `保存窗口位置失败：${String(error)}`;
+  }
 }
 
 async function addAccount() {
   settingsOpen.value = false;
   await nextTick();
   await setMode("expanded", mode.value === "expanded");
+  toast.value = "正在准备浏览器授权…";
   await store.startAddAccount();
-  if (store.login.status === "waiting") toast.value = "已打开浏览器，正在等待授权…";
+  toast.value = store.login.status === "waiting" ? "已打开浏览器，正在等待授权…" : undefined;
 }
 async function showSettings() {
   settingsOpen.value = !settingsOpen.value;
@@ -156,6 +193,12 @@ async function updateSettings(next: UserSettings) {
   savingSettings.value = true;
   try {
     settings.value = await invoke<UserSettings>("update_settings", { settings: next });
+    if (settings.value.rememberPosition) {
+      await invoke("save_window_position", {
+        mode: mode.value,
+        horizontal: placement.value.horizontal,
+      });
+    }
     scheduleRefresh();
     toast.value = "设置已保存";
     window.setTimeout(() => { toast.value = undefined; }, 1800);
@@ -211,14 +254,21 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main :class="['stage', ...stageClass]">
+  <main
+    :class="['stage', ...stageClass]"
+    @pointerdown="beginRightDrag"
+    @pointermove="queueDragPosition"
+    @pointerup="endRightDrag"
+    @pointercancel="endRightDrag"
+    @contextmenu.prevent
+  >
     <button
       v-if="mode === 'idle'"
       class="orb-button"
       aria-label="打开 Codex Account Manager"
       @mouseenter="scheduleHover"
       @mouseleave="scheduleIdle"
-      @pointerdown="beginPointer"
+      @click="setMode('expanded')"
     >
       <QuotaRing :five-hour="store.current?.fiveHour" :weekly="store.current?.weekly" :process-state="processState" />
     </button>
@@ -228,9 +278,8 @@ onBeforeUnmount(() => {
       class="glass hover-shell"
       @mouseenter="cancelHoverTimer"
       @mouseleave="scheduleIdle"
-      @pointerdown="beginPointer"
     >
-      <HoverSummary :account="store.current" :process-state="processState" :loading="store.loading" @expand="expandFromSurface" />
+      <HoverSummary :account="store.current" :process-state="processState" :loading="store.loading" @expand="setMode('expanded')" />
     </div>
 
     <div v-else class="glass expanded-shell" :style="{ height: `${expandedSurfaceHeight}px` }">

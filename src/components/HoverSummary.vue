@@ -26,17 +26,17 @@ defineEmits<{ expand: [] }>();
 
 <style scoped>
 .summary {
-  width: 520px;
+  width: 456px;
   height: 88px;
   padding: 6px;
   display: grid;
   grid-template-columns: 76px 1fr;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   cursor: pointer;
 }
 .pill { border-radius: 999px; }
-.summary-content { min-width: 0; padding-right: 18px; display: grid; gap: 9px; }
+.summary-content { min-width: 0; padding-right: 12px; display: grid; gap: 9px; }
 header { display: flex; align-items: center; gap: 10px; min-width: 0; }
 strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #f5f8fd; font-size: 14px; }
 .plan { border: 1px solid #8565ec; background: #332264; color: #f0eaff; border-radius: 6px; padding: 2px 7px; font-size: 10px; font-weight: 750; }

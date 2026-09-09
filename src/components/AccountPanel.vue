@@ -79,7 +79,7 @@ const others = computed(() => props.accounts.filter((account) => !account.isActi
 </template>
 
 <style scoped>
-.account-panel { width: 520px; height: 100%; overflow: hidden; border-radius: 20px 20px 38px 38px; display: flex; flex-direction: column; }
+.account-panel { width: 456px; height: 100%; overflow: hidden; border-radius: 20px 20px 38px 38px; display: flex; flex-direction: column; }
 .panel-actions { height: 56px; flex: 0 0 56px; display: grid; grid-template-columns: 1fr 1fr; }
 .panel-actions button { position: relative; border: 0; color: #dce5f1; background: transparent; cursor: pointer; font-size: 13px; }
 .panel-actions button + button { border-left: 1px solid rgba(145, 161, 183, .24); }

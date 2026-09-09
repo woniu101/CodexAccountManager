@@ -51,10 +51,10 @@ const freshness = computed(() => {
 .account-row {
   min-height: 102px;
   display: grid;
-  grid-template-columns: 82px minmax(0, 1fr) 68px;
+  grid-template-columns: 78px minmax(0, 1fr) 64px;
   align-items: center;
-  gap: 10px;
-  padding: 7px 12px 7px 8px;
+  gap: 8px;
+  padding: 7px 10px 7px 8px;
   border-top: 1px solid rgba(145, 161, 183, .25);
 }
 .identity { width: 76px; display: grid; place-items: center; }
@@ -69,7 +69,7 @@ const freshness = computed(() => {
 header { display: flex; align-items: center; gap: 9px; min-width: 0; }
 strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .plan { border: 1px solid #8062e8; color: #ece7ff; background: #30225e; border-radius: 6px; padding: 2px 7px; font-size: 10px; font-weight: 750; }
-.action { width: 64px; height: 32px; border-radius: 8px; border: 1px solid #1685ff; color: white; background: #087ef5; font-size: 12px; cursor: pointer; }
+.action { width: 60px; height: 32px; border-radius: 8px; border: 1px solid #1685ff; color: white; background: #087ef5; font-size: 12px; cursor: pointer; }
 .action:hover:not(:disabled) { background: #2392ff; }
 .action.current { border-color: #2fbf86; color: #66e5ad; background: rgba(24, 139, 94, .18); }
 .action:disabled { cursor: default; opacity: .9; }

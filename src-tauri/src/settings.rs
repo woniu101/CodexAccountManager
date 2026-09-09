@@ -41,12 +41,14 @@ fn normalize(settings: &mut UserSettings) {
     settings.refresh_interval_minutes = settings.refresh_interval_minutes.clamp(1, 60);
 }
 
-pub fn save_window_position(window: &WebviewWindow) -> Result<(), String> {
+pub fn save_window_position_at(
+    window: &WebviewWindow,
+    position: PhysicalPosition<i32>,
+) -> Result<(), String> {
     let mut stored = load()?;
     if !stored.user.remember_position {
         return Ok(());
     }
-    let position = window.outer_position().map_err(|error| error.to_string())?;
     let monitor = window
         .current_monitor()
         .map_err(|error| error.to_string())?

@@ -51,7 +51,12 @@ export const useAccountStore = defineStore("accounts", {
       try {
         this.login = await invoke<LoginProgress>("start_add_account");
         if (this.login.status === "waiting") {
-          await openUrl(this.login.authUrl);
+          try {
+            await openUrl(this.login.authUrl);
+          } catch (error) {
+            await invoke("cancel_add_account");
+            throw error;
+          }
           window.clearInterval(loginTimer);
           loginTimer = window.setInterval(() => void this.pollLogin(), 1200);
         }

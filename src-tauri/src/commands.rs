@@ -6,7 +6,7 @@ use crate::{
 };
 use serde_json::json;
 use std::{fs, sync::MutexGuard, thread, time::Duration};
-use tauri::{Emitter, LogicalSize, PhysicalPosition, State, WebviewWindow};
+use tauri::{Emitter, PhysicalPosition, State, WebviewWindow};
 use uuid::Uuid;
 
 #[tauri::command]
@@ -265,8 +265,8 @@ pub fn set_window_mode(
     let right_edge = work_area.position.x + work_area.size.width as i32;
     let bottom_edge = work_area.position.y + work_area.size.height as i32;
     let (logical_width, logical_height) = match mode.as_str() {
-        "hover" => (528.0, 96.0),
-        "expanded" => (528.0, expanded_height.clamp(166.0, 380.0)),
+        "hover" => (464.0, 96.0),
+        "expanded" => (464.0, expanded_height.clamp(166.0, 380.0)),
         _ => (96.0, 96.0),
     };
     let scale = monitor.scale_factor();
@@ -301,16 +301,63 @@ pub fn set_window_mode(
         position.y.min(bottom_edge - height as i32)
     }
     .max(work_area.position.y);
-    window
-        .set_position(PhysicalPosition::new(x, y))
-        .map_err(|error| error.to_string())?;
-    window
-        .set_size(LogicalSize::new(logical_width, logical_height))
-        .map_err(|error| error.to_string())?;
+    set_window_bounds(&window, x, y, width, height)?;
     Ok(WindowPlacement {
         horizontal: if opens_left { "left" } else { "right" }.to_string(),
         vertical: if opens_up { "up" } else { "down" }.to_string(),
     })
+}
+
+#[cfg(target_os = "windows")]
+fn set_window_bounds(
+    window: &WebviewWindow,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos};
+
+    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    // SAFETY: `hwnd` belongs to this live Tauri window, dimensions are bounded by the
+    // monitor work area, and SWP_NOZORDER means the null insert-after handle is ignored.
+    let result = unsafe {
+        SetWindowPos(
+            hwnd.0,
+            std::ptr::null_mut(),
+            x,
+            y,
+            width as i32,
+            height as i32,
+            SWP_NOACTIVATE | SWP_NOZORDER,
+        )
+    };
+    if result == 0 {
+        Err(format!(
+            "调整悬浮窗失败：{}",
+            std::io::Error::last_os_error()
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn set_window_bounds(
+    window: &WebviewWindow,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    use tauri::PhysicalSize;
+
+    window
+        .set_position(PhysicalPosition::new(x, y))
+        .map_err(|error| error.to_string())?;
+    window
+        .set_size(PhysicalSize::new(width, height))
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -324,8 +371,37 @@ pub fn update_settings(settings: UserSettings) -> Result<UserSettings, String> {
 }
 
 #[tauri::command]
-pub fn save_window_position(window: WebviewWindow) -> Result<(), String> {
-    settings::save_window_position(&window)
+pub fn save_window_position(
+    window: WebviewWindow,
+    mode: String,
+    horizontal: String,
+) -> Result<(), String> {
+    let position = window.outer_position().map_err(|error| error.to_string())?;
+    let size = window.outer_size().map_err(|error| error.to_string())?;
+    let scale = window.scale_factor().map_err(|error| error.to_string())?;
+    let anchor = idle_anchor(position, size, scale, &mode, &horizontal);
+    settings::save_window_position_at(&window, anchor)
+}
+
+fn idle_anchor(
+    position: PhysicalPosition<i32>,
+    size: tauri::PhysicalSize<u32>,
+    scale: f64,
+    mode: &str,
+    horizontal: &str,
+) -> PhysicalPosition<i32> {
+    let idle_size = (96.0 * scale).round() as i32;
+    let x = if mode != "idle" && horizontal == "left" {
+        position.x + size.width as i32 - idle_size
+    } else {
+        position.x
+    };
+    let y = if mode == "expanded" {
+        position.y + size.height as i32 - idle_size
+    } else {
+        position.y
+    };
+    PhysicalPosition::new(x, y)
 }
 
 fn cleanup_pending(guard: &mut MutexGuard<'_, Option<PendingLogin>>) {
@@ -339,4 +415,34 @@ fn unix_now() -> i64 {
         .duration_since(std::time::SystemTime::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::idle_anchor;
+    use tauri::{PhysicalPosition, PhysicalSize};
+
+    #[test]
+    fn expanded_left_window_saves_the_idle_orb_anchor() {
+        let anchor = idle_anchor(
+            PhysicalPosition::new(100, 200),
+            PhysicalSize::new(696, 360),
+            1.5,
+            "expanded",
+            "left",
+        );
+        assert_eq!(anchor, PhysicalPosition::new(652, 416));
+    }
+
+    #[test]
+    fn idle_window_saves_its_top_left_position() {
+        let anchor = idle_anchor(
+            PhysicalPosition::new(320, 240),
+            PhysicalSize::new(144, 144),
+            1.5,
+            "idle",
+            "right",
+        );
+        assert_eq!(anchor, PhysicalPosition::new(320, 240));
+    }
 }

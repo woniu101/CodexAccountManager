@@ -35,7 +35,11 @@ pub struct DashboardState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "status")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "status"
+)]
 pub enum LoginProgress {
     Idle,
     Waiting { auth_url: String },
@@ -66,5 +70,21 @@ impl Default for UserSettings {
             launch_at_login: false,
             remember_position: true,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LoginProgress;
+
+    #[test]
+    fn login_url_is_serialized_for_the_typescript_client() {
+        let value = serde_json::to_value(LoginProgress::Waiting {
+            auth_url: "https://example.test/login".to_string(),
+        })
+        .expect("serialize login progress");
+        assert_eq!(value["status"], "waiting");
+        assert_eq!(value["authUrl"], "https://example.test/login");
+        assert!(value.get("auth_url").is_none());
     }
 }

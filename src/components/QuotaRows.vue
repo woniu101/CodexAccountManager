@@ -52,9 +52,9 @@ const reset = (quota?: QuotaWindow) => {
 .quota-rows { display: grid; gap: 7px; min-width: 0; }
 .quota-row {
   display: grid;
-  grid-template-columns: 18px 104px minmax(74px, 1fr) 108px;
+  grid-template-columns: 18px 88px minmax(44px, 1fr) 84px;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   min-width: 0;
   color: #dce5f2;
   font-size: 12px;
@@ -66,5 +66,5 @@ const reset = (quota?: QuotaWindow) => {
 .bar i { display: block; height: 100%; border-radius: inherit; transition: width .45s ease-out; }
 .bar .five { background: #4dd7ff; }
 .bar .weekly { background: #9a7bff; }
-time { text-align: right; color: #aeb9c9; white-space: nowrap; font-size: 11px; }
+time { text-align: right; color: #aeb9c9; white-space: nowrap; font-size: 10px; }
 </style>
