@@ -5,7 +5,100 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(not(debug_assertions))]
+use std::collections::HashMap;
+
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+#[cfg(not(debug_assertions))]
+pub fn relaunch_outside_codex_tree() -> Result<bool, String> {
+    if !has_codex_desktop_ancestor()? {
+        return Ok(false);
+    }
+
+    let executable =
+        std::env::current_exe().map_err(|error| format!("无法读取管理器程序路径：{error}"))?;
+    Command::new("explorer.exe")
+        .arg(executable)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn()
+        .map_err(|error| format!("无法从 Windows 桌面重新启动管理器：{error}"))?;
+    Ok(true)
+}
+
+#[cfg(not(debug_assertions))]
+fn has_codex_desktop_ancestor() -> Result<bool, String> {
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, INVALID_HANDLE_VALUE},
+        System::Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
+            TH32CS_SNAPPROCESS,
+        },
+    };
+
+    // SAFETY: the snapshot handle is checked before use, PROCESSENTRY32W has
+    // the required size set, and the handle is closed on every successful path.
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        return Err(format!(
+            "无法读取 Windows 进程列表：{}",
+            std::io::Error::last_os_error()
+        ));
+    }
+
+    let mut processes = HashMap::new();
+    let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
+    entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+    if unsafe { Process32FirstW(snapshot, &mut entry) } != 0 {
+        loop {
+            let name_end = entry
+                .szExeFile
+                .iter()
+                .position(|character| *character == 0)
+                .unwrap_or(entry.szExeFile.len());
+            let name = String::from_utf16_lossy(&entry.szExeFile[..name_end]);
+            processes.insert(entry.th32ProcessID, (entry.th32ParentProcessID, name));
+            if unsafe { Process32NextW(snapshot, &mut entry) } == 0 {
+                break;
+            }
+        }
+    }
+    unsafe { CloseHandle(snapshot) };
+
+    Ok(has_named_ancestor(
+        std::process::id(),
+        &processes,
+        "ChatGPT.exe",
+    ))
+}
+
+#[cfg(not(debug_assertions))]
+fn has_named_ancestor(
+    current_pid: u32,
+    processes: &HashMap<u32, (u32, String)>,
+    expected_name: &str,
+) -> bool {
+    let mut pid = current_pid;
+    for _ in 0..16 {
+        let Some((parent_pid, _)) = processes.get(&pid) else {
+            return false;
+        };
+        if *parent_pid == 0 || *parent_pid == pid {
+            return false;
+        }
+        let Some((_, parent_name)) = processes.get(parent_pid) else {
+            return false;
+        };
+        if parent_name.eq_ignore_ascii_case(expected_name) {
+            return true;
+        }
+        pid = *parent_pid;
+    }
+    false
+}
 
 pub fn is_codex_running() -> bool {
     codex_pids().is_ok_and(|pids| !pids.is_empty())

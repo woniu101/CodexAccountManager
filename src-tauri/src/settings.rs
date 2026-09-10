@@ -75,16 +75,10 @@ pub fn restore_window_position(window: &WebviewWindow) -> Result<(), String> {
     let monitors = window
         .available_monitors()
         .map_err(|error| error.to_string())?;
-    let current_scale = window.scale_factor().unwrap_or(1.0);
-    let saved = stored
-        .positions
-        .iter()
-        .min_by(|left, right| {
-            (left.scale_factor - current_scale)
-                .abs()
-                .total_cmp(&(right.scale_factor - current_scale).abs())
-        })
-        .ok_or("没有已保存的悬浮球位置")?;
+    // Entries are moved to the end whenever the orb is saved. Restoring by the
+    // current monitor scale made equal-DPI multi-monitor setups pick an older
+    // entry, so startup appeared to forget the most recent position.
+    let saved = stored.positions.last().ok_or("没有已保存的悬浮球位置")?;
     let monitor = monitors
         .iter()
         .find(|monitor| {
@@ -104,8 +98,8 @@ pub fn restore_window_position(window: &WebviewWindow) -> Result<(), String> {
         .or_else(|| monitors.first())
         .ok_or("没有可用显示器")?;
     let area = monitor.work_area();
-    let width = (80.0 * monitor.scale_factor()).round() as i32;
-    let height = (80.0 * monitor.scale_factor()).round() as i32;
+    let width = (88.0 * monitor.scale_factor()).round() as i32;
+    let height = (88.0 * monitor.scale_factor()).round() as i32;
     let x = saved.x.clamp(
         area.position.x,
         area.position.x + area.size.width as i32 - width,
@@ -162,7 +156,7 @@ fn set_launch_at_login(enabled: bool) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize;
+    use super::{SavedPosition, normalize};
     use crate::models::UserSettings;
 
     #[test]
@@ -180,5 +174,27 @@ mod tests {
         };
         normalize(&mut high);
         assert_eq!(high.refresh_interval_minutes, 60);
+    }
+
+    #[test]
+    fn most_recent_position_is_the_last_saved_entry() {
+        let positions = [
+            SavedPosition {
+                monitor_name: "DISPLAY1".to_string(),
+                scale_factor: 1.0,
+                x: 120,
+                y: 240,
+            },
+            SavedPosition {
+                monitor_name: "DISPLAY2".to_string(),
+                scale_factor: 1.0,
+                x: 1920,
+                y: 530,
+            },
+        ];
+
+        let saved = positions.last().expect("saved position");
+        assert_eq!(saved.monitor_name, "DISPLAY2");
+        assert_eq!((saved.x, saved.y), (1920, 530));
     }
 }

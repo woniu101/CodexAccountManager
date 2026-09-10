@@ -52,9 +52,9 @@ const reset = (quota?: QuotaWindow) => {
 .quota-rows { display: grid; gap: 6px; min-width: 0; }
 .quota-row {
   display: grid;
-  grid-template-columns: 16px 80px minmax(38px, 1fr) 68px;
+  grid-template-columns: 16px 82px minmax(108px, 1fr) 64px;
   align-items: center;
-  gap: 4px;
+  column-gap: 6px;
   min-width: 0;
   color: #dce5f2;
   font-size: 12px;
@@ -62,9 +62,9 @@ const reset = (quota?: QuotaWindow) => {
 }
 .quota-icon { width: 16px; height: 16px; fill: none; stroke: #e6edf7; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .quota-label { white-space: nowrap; }
-.bar { display: block; height: 6px; border-radius: 999px; background: #293647; overflow: hidden; }
+.bar { display: block; width: 100%; height: 6px; border-radius: 999px; background: #293647; overflow: hidden; }
 .bar i { display: block; height: 100%; border-radius: inherit; transition: width .45s ease-out; }
 .bar .five { background: #4dd7ff; }
 .bar .weekly { background: #9a7bff; }
-time { text-align: left; color: #aeb9c9; white-space: nowrap; font-size: 10px; }
+time { text-align: left; color: #aeb9c9; white-space: nowrap; font-size: 10px; font-variant-numeric: tabular-nums; }
 </style>

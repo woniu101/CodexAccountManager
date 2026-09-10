@@ -15,17 +15,28 @@ type WindowMode = "idle" | "hover" | "expanded";
 const store = useAccountStore();
 const mode = ref<WindowMode>("idle");
 const placement = ref<WindowPlacement>({ horizontal: "right", vertical: "up" });
-const toast = ref<string>();
+const surfaceAppearing = ref(false);
+const surfaceCollapsing = ref(false);
+const surfaceStaged = ref(false);
+const panelRevealing = ref(false);
 const switchStage = ref<string>();
 const settingsOpen = ref(false);
 const savingSettings = ref(false);
+const settingsSaved = ref(false);
+const orbSaved = ref(false);
+const refreshStatus = ref<string>();
 const pendingSwitch = ref<ManagedAccount>();
+const pendingDelete = ref<ManagedAccount>();
 const settings = ref<UserSettings>({
   refreshIntervalMinutes: 5,
   launchAtLogin: false,
   rememberPosition: true,
 });
 let hoverTimer: number | undefined;
+let surfaceTimer: number | undefined;
+let feedbackTimer: number | undefined;
+let modeTransition = 0;
+let appliedExpandedHeight = 0;
 let refreshTimer: number | undefined;
 const unlisteners: UnlistenFn[] = [];
 let dragStart: {
@@ -51,27 +62,84 @@ const processState = computed<ProcessState>(() => {
   if (store.error) return "error";
   return store.codexRunning ? "running" : "stopped";
 });
+const statusMessage = computed(() => (
+  store.error
+  || (store.switchingId ? switchStage.value : undefined)
+  || store.notice
+  || (!settingsOpen.value ? refreshStatus.value : undefined)
+));
+const statusTone = computed<"error" | "switching" | "info">(() => store.error ? "error" : store.switchingId ? "switching" : "info");
+const hasPanelNotice = computed(() => Boolean(statusMessage.value || store.login.status === "duplicate" || store.login.status === "failed"));
 const expandedSurfaceHeight = computed(() => {
-  if (pendingSwitch.value) return 224;
-  if (settingsOpen.value) return 304;
+  if (pendingSwitch.value || pendingDelete.value) return 224;
+  if (settingsOpen.value) return 318 + (hasPanelNotice.value ? 32 : 0);
   if (!store.accounts.length) return 230;
-  return 52 + 94 * Math.min(store.accounts.length, 3);
+  const otherRows = Math.min(Math.max(store.accounts.length - 1, 0), 2);
+  return 52 + 80 + 80 * otherRows + (hasPanelNotice.value ? 32 : 0);
 });
 
-async function setMode(nextMode: WindowMode, force = false) {
+async function setMode(nextMode: WindowMode, force = false, refreshPlacement = false) {
+  const targetExpandedHeight = expandedSurfaceHeight.value + 8;
+  if (mode.value === nextMode) {
+    if (!force) return;
+    if (
+      nextMode === "expanded"
+      && !refreshPlacement
+      && appliedExpandedHeight === targetExpandedHeight
+    ) return;
+  }
+  const transition = ++modeTransition;
   window.clearTimeout(hoverTimer);
-  if (mode.value === nextMode && !force) return;
+  window.clearTimeout(surfaceTimer);
+  surfaceAppearing.value = false;
+  const previousMode = mode.value;
+  const expanding = (
+    (previousMode === "idle" && nextMode !== "idle")
+    || (previousMode === "hover" && nextMode === "expanded")
+  );
+  panelRevealing.value = false;
+  if (nextMode === "idle" && previousMode !== "idle") {
+    surfaceCollapsing.value = true;
+    await new Promise((resolve) => window.setTimeout(resolve, 280));
+    if (transition !== modeTransition) {
+      surfaceCollapsing.value = false;
+      return;
+    }
+  }
+  if (expanding) {
+    surfaceStaged.value = true;
+    mode.value = nextMode;
+    await nextTick();
+  }
   try {
     placement.value = await invoke<WindowPlacement>("set_window_mode", {
       mode: nextMode,
+      currentMode: previousMode,
       currentHorizontal: placement.value.horizontal,
       currentVertical: placement.value.vertical,
-      expandedHeight: expandedSurfaceHeight.value + 8,
+      expandedHeight: targetExpandedHeight,
     });
   } catch (error) {
+    if (expanding) mode.value = previousMode;
+    surfaceStaged.value = false;
     store.error = String(error);
+    surfaceCollapsing.value = false;
+    return;
   }
-  mode.value = nextMode;
+  if (!expanding) mode.value = nextMode;
+  if (nextMode === "expanded") appliedExpandedHeight = targetExpandedHeight;
+  surfaceCollapsing.value = false;
+  if (expanding) {
+    await nextTick();
+    surfaceStaged.value = false;
+  }
+  if (previousMode === "idle" && nextMode !== "idle") {
+    surfaceAppearing.value = true;
+    surfaceTimer = window.setTimeout(() => { surfaceAppearing.value = false; }, 240);
+  } else if (previousMode === "hover" && nextMode === "expanded") {
+    panelRevealing.value = true;
+    surfaceTimer = window.setTimeout(() => { panelRevealing.value = false; }, 240);
+  }
   if (nextMode === "expanded") {
     const cacheAge = Date.now() / 1000 - (store.refreshedAt ?? 0);
     if (cacheAge > 60 && !store.loading) void store.load();
@@ -80,13 +148,28 @@ async function setMode(nextMode: WindowMode, force = false) {
 
 function scheduleHover() {
   if (mode.value !== "idle" || dragStart) return;
-  hoverTimer = window.setTimeout(() => void setMode("hover"), 220);
+  hoverTimer = window.setTimeout(() => void setMode("hover"), 180);
 }
 function scheduleIdle() {
-  if (mode.value !== "hover" || dragStart) return;
-  hoverTimer = window.setTimeout(() => void setMode("idle"), 260);
+  if (mode.value === "idle" || dragStart || pendingSwitch.value || pendingDelete.value) return;
+  const delay = mode.value === "hover" ? 280 : 800;
+  hoverTimer = window.setTimeout(() => {
+    const focused = document.activeElement;
+    if (
+      mode.value === "expanded"
+      && focused instanceof HTMLElement
+      && focused.matches("input, select, textarea")
+    ) return;
+    void setMode("idle");
+  }, delay);
 }
-function cancelHoverTimer() { window.clearTimeout(hoverTimer); }
+function cancelHoverTimer() {
+  window.clearTimeout(hoverTimer);
+  if (surfaceCollapsing.value) {
+    modeTransition += 1;
+    surfaceCollapsing.value = false;
+  }
+}
 
 async function beginRightDrag(event: PointerEvent) {
   if (event.button !== 2 || dragStart) return;
@@ -160,12 +243,15 @@ async function endRightDrag(event: PointerEvent) {
     await flushDragPosition();
   }
   try {
+    await setMode(mode.value, true, true);
     await invoke("save_window_position", {
       mode: mode.value,
       horizontal: placement.value.horizontal,
+      vertical: placement.value.vertical,
     });
-    toast.value = "悬浮窗位置已保存";
-    window.setTimeout(() => { toast.value = undefined; }, 1200);
+    orbSaved.value = true;
+    window.clearTimeout(feedbackTimer);
+    feedbackTimer = window.setTimeout(() => { orbSaved.value = false; }, 950);
   } catch (error) {
     store.error = `保存窗口位置失败：${String(error)}`;
   }
@@ -183,11 +269,13 @@ async function showSettings() {
   await setMode("expanded", mode.value === "expanded");
 }
 function scheduleRefresh() {
-  window.clearInterval(refreshTimer);
-  refreshTimer = window.setInterval(
-    () => void store.load(),
-    settings.value.refreshIntervalMinutes * 60 * 1000,
-  );
+  window.clearTimeout(refreshTimer);
+  refreshTimer = window.setTimeout(() => {
+    void (async () => {
+      await store.load();
+      scheduleRefresh();
+    })();
+  }, settings.value.refreshIntervalMinutes * 60 * 1000);
 }
 async function updateSettings(next: UserSettings) {
   savingSettings.value = true;
@@ -197,16 +285,26 @@ async function updateSettings(next: UserSettings) {
       await invoke("save_window_position", {
         mode: mode.value,
         horizontal: placement.value.horizontal,
+        vertical: placement.value.vertical,
       });
     }
     scheduleRefresh();
-    toast.value = "设置已保存";
-    window.setTimeout(() => { toast.value = undefined; }, 1800);
+    settingsSaved.value = true;
+    window.clearTimeout(feedbackTimer);
+    feedbackTimer = window.setTimeout(() => { settingsSaved.value = false; }, 1200);
   } catch (error) {
     store.error = String(error);
   } finally {
     savingSettings.value = false;
   }
+}
+async function refreshAccounts() {
+  refreshStatus.value = "正在刷新全部账号…";
+  await store.load(true);
+  refreshStatus.value = store.error ? "刷新失败，请查看提示" : "刚刚完成刷新";
+  scheduleRefresh();
+  window.clearTimeout(feedbackTimer);
+  feedbackTimer = window.setTimeout(() => { refreshStatus.value = undefined; }, 1800);
 }
 async function switchAccount(account: ManagedAccount) {
   pendingSwitch.value = account;
@@ -226,10 +324,34 @@ async function confirmSwitch() {
   await setMode("expanded", true);
   await store.switchTo(account);
 }
+async function requestDelete(account: ManagedAccount) {
+  pendingDelete.value = account;
+  await nextTick();
+  await setMode("expanded", true);
+}
+async function closeDeleteConfirm() {
+  pendingDelete.value = undefined;
+  await nextTick();
+  await setMode("expanded", true);
+}
+async function confirmDelete() {
+  const account = pendingDelete.value;
+  if (!account) return;
+  pendingDelete.value = undefined;
+  await store.removeAccount(account);
+  await nextTick();
+  await setMode("expanded", true);
+}
 function onKeydown(event: KeyboardEvent) {
   if (event.key !== "Escape") return;
   if (pendingSwitch.value) void closeSwitchConfirm();
+  else if (pendingDelete.value) void closeDeleteConfirm();
   else void setMode("idle");
+}
+
+function handleOrbClick() {
+  if (mode.value === "expanded") void setMode("idle");
+  else void setMode("expanded");
 }
 
 onMounted(async () => {
@@ -239,9 +361,11 @@ onMounted(async () => {
   } catch (error) {
     store.error = String(error);
   }
+  await setMode("idle", true, true);
+  await getCurrentWindow().show();
   await store.load();
   scheduleRefresh();
-  unlisteners.push(await listen("refresh-requested", () => void store.load()));
+  unlisteners.push(await listen("refresh-requested", () => void refreshAccounts()));
   unlisteners.push(await listen("add-account-requested", () => void addAccount()));
   unlisteners.push(await listen("settings-requested", () => {
     void (async () => {
@@ -250,18 +374,36 @@ onMounted(async () => {
       await setMode("expanded", mode.value === "expanded");
     })();
   }));
+  unlisteners.push(await listen<string>("switch-account-requested", (event) => {
+    void (async () => {
+      let account = store.accounts.find((item) => item.id === event.payload);
+      if (!account) {
+        await store.load();
+        account = store.accounts.find((item) => item.id === event.payload);
+      }
+      if (account && !account.isActive) await switchAccount(account);
+    })();
+  }));
   unlisteners.push(await listen<string>("switch-progress", (event) => {
     switchStage.value = event.payload;
   }));
 });
-watch(() => store.accounts.length, () => {
+watch([() => store.accounts.length, hasPanelNotice], () => {
   if (mode.value === "expanded" && !settingsOpen.value) {
     void setMode("expanded", true);
   }
 });
+watch(() => store.notice, (notice) => {
+  if (notice) void setMode("expanded", true);
+});
+watch(() => store.login.status, (status) => {
+  if (status === "failed") void setMode("expanded", true);
+});
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", onKeydown);
-  window.clearInterval(refreshTimer);
+  window.clearTimeout(refreshTimer);
+  window.clearTimeout(surfaceTimer);
+  window.clearTimeout(feedbackTimer);
   cancelHoverTimer();
   for (const unlisten of unlisteners) unlisten();
 });
@@ -269,52 +411,61 @@ onBeforeUnmount(() => {
 
 <template>
   <main
-    :class="['stage', ...stageClass]"
+    :class="['stage', ...stageClass, { 'has-modal': pendingSwitch || pendingDelete }]"
     @pointerdown="beginRightDrag"
     @pointermove="queueDragPosition"
     @pointerup="endRightDrag"
     @pointercancel="endRightDrag"
     @contextmenu.prevent
   >
-    <button
-      v-if="mode === 'idle'"
-      class="orb-button"
-      aria-label="打开 Codex Account Manager"
-      @mouseenter="scheduleHover"
-      @mouseleave="scheduleIdle"
-      @click="setMode('expanded')"
-    >
-      <QuotaRing :five-hour="store.current?.fiveHour" :weekly="store.current?.weekly" :process-state="processState" />
-    </button>
-
     <div
-      v-else-if="mode === 'hover'"
-      class="glass hover-shell"
+      :class="[
+        'glass',
+        'surface',
+        mode === 'expanded' ? 'expanded-shell' : 'hover-shell',
+        {
+          'surface-appearing': surfaceAppearing,
+          'surface-collapsing': surfaceCollapsing,
+          'surface-staged': surfaceStaged,
+          'panel-revealing': panelRevealing,
+        },
+      ]"
+      :style="{ height: `${mode === 'expanded' ? expandedSurfaceHeight : 80}px` }"
       @mouseenter="cancelHoverTimer"
       @mouseleave="scheduleIdle"
+      @click="mode === 'hover' && setMode('expanded')"
     >
-      <HoverSummary :account="store.current" :process-state="processState" :loading="store.loading" @expand="setMode('expanded')" />
-    </div>
-
-    <div v-else class="glass expanded-shell" :style="{ height: `${expandedSurfaceHeight}px` }">
+      <HoverSummary
+        class="anchor-summary"
+        :account="store.current"
+        :loading="store.loading"
+        :horizontal="placement.horizontal"
+      />
       <AccountPanel
         :accounts="store.accounts"
-        :process-state="processState"
         :switching-id="store.switchingId"
         :loading="store.loading"
         :settings-open="settingsOpen"
         :settings="settings"
         :saving-settings="savingSettings"
+        :settings-saved="settingsSaved"
+        :refresh-status="refreshStatus"
+        :status-message="statusMessage"
+        :status-tone="statusTone"
         :login="store.login"
         :adding-account="store.addingAccount"
+        :cancelling-login="store.cancellingLogin"
+        :horizontal="placement.horizontal"
+        :vertical="placement.vertical"
         @add="addAccount"
         @settings="showSettings"
         @import-current="store.importCurrent()"
         @switch="switchAccount"
+        @remove="requestDelete"
         @update-settings="updateSettings"
-        @refresh="store.load()"
-        @collapse="setMode('idle')"
+        @refresh="refreshAccounts"
         @cancel-login="store.cancelLogin()"
+        @confirm-duplicate="store.confirmDuplicate($event)"
       />
       <div v-if="pendingSwitch" class="confirm-layer" @click.self="closeSwitchConfirm">
         <section class="confirm-card" role="dialog" aria-modal="true" aria-labelledby="switch-title">
@@ -330,15 +481,35 @@ onBeforeUnmount(() => {
           </div>
         </section>
       </div>
-      <p v-if="store.error" class="notice error" :title="store.error">{{ store.error }}</p>
-      <p v-else-if="store.login.status === 'duplicate'" class="notice">
-        账号 {{ store.login.account.email }} 已存在，是否更新凭据？
-        <button @click="store.confirmDuplicate(true)">更新</button>
-        <button @click="store.confirmDuplicate(false)">取消</button>
-      </p>
-      <p v-else-if="store.login.status === 'failed'" class="notice error">{{ store.login.message }}</p>
-      <p v-else-if="store.switchingId && switchStage" class="notice switching">{{ switchStage }}</p>
-      <p v-else-if="toast" class="notice">{{ toast }}</p>
+      <div v-if="pendingDelete" class="confirm-layer" @click.self="closeDeleteConfirm">
+        <section class="confirm-card danger-card" role="dialog" aria-modal="true" aria-labelledby="delete-title">
+          <span class="confirm-icon danger">×</span>
+          <div class="confirm-copy">
+            <strong id="delete-title">删除本地账号？</strong>
+            <span class="account-chip">{{ pendingDelete.alias || pendingDelete.email }}</span>
+            <small>将移除本机保存的账号与加密凭据，不影响 OpenAI 账号，之后仍可重新添加。</small>
+          </div>
+          <div class="confirm-actions">
+            <button class="secondary" @click="closeDeleteConfirm">保留账号</button>
+            <button class="danger-action" @click="confirmDelete">删除</button>
+          </div>
+        </section>
+      </div>
     </div>
+
+    <button
+      class="orb-button persistent-orb"
+      :aria-label="mode === 'expanded' ? '收起 Codex Account Manager' : '打开 Codex Account Manager'"
+      @mouseenter="mode === 'idle' ? scheduleHover() : cancelHoverTimer()"
+      @mouseleave="scheduleIdle"
+      @click.stop="handleOrbClick"
+    >
+      <QuotaRing
+        :five-hour="store.current?.fiveHour"
+        :weekly="store.current?.weekly"
+        :process-state="processState"
+        :saved="orbSaved"
+      />
+    </button>
   </main>
 </template>

@@ -131,7 +131,7 @@ impl AppServerSession {
     pub fn query_account(&mut self) -> Result<ManagedAccount, String> {
         let account_result = self.request(
             "account/read",
-            json!({ "refreshToken": false }),
+            json!({ "refreshToken": true }),
             Duration::from_secs(12),
         )?;
         let account = account_result

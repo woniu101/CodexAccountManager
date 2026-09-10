@@ -47,6 +47,40 @@ pub fn has_account(account_id: &str) -> Result<bool, String> {
     Ok(load_accounts()?.iter().any(|item| item.id == account_id))
 }
 
+pub fn remove_account(account_id: &str) -> Result<(), String> {
+    let live_id = read_account_id(&auth_path()?).ok();
+    if live_id.as_deref() == Some(account_id) {
+        return Err("请先切换到其他账号，再删除当前账号".to_string());
+    }
+
+    let mut accounts = load_accounts()?;
+    let index = accounts
+        .iter()
+        .position(|item| item.id == account_id)
+        .ok_or("要删除的账号不存在")?;
+    let removed = accounts.remove(index);
+    let root = app_data_dir()?;
+    let account_dir = root.join("accounts").join(sanitize_id(&removed.id));
+    let tombstone = root.join("temp").join(format!("delete-{}", Uuid::new_v4()));
+
+    if account_dir.exists() {
+        fs::create_dir_all(tombstone.parent().ok_or("删除暂存目录无父目录")?)
+            .map_err(display_io("创建删除暂存目录失败"))?;
+        fs::rename(&account_dir, &tombstone).map_err(display_io("暂存待删除账号失败"))?;
+    }
+
+    if let Err(error) = save_accounts(&accounts) {
+        if tombstone.exists() {
+            let _ = fs::rename(&tombstone, &account_dir);
+        }
+        return Err(error);
+    }
+    if tombstone.exists() {
+        let _ = fs::remove_dir_all(tombstone);
+    }
+    Ok(())
+}
+
 pub fn save_accounts(accounts: &[AccountMeta]) -> Result<(), String> {
     let root = app_data_dir()?;
     fs::create_dir_all(&root).map_err(display_io("创建应用数据目录失败"))?;
