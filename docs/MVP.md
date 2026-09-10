@@ -2,7 +2,7 @@
 
 > 版本：0.1.0
 >
-> 状态：核心功能完成，准备公开仓库与发布 Windows 便携 EXE
+> 状态：核心功能完成，v0.1.0 Windows 便携版已发布
 >
 > 最后更新：2026-09-10
 
@@ -224,6 +224,8 @@ src-tauri/src/
 
 ## 发布清单
 
+v0.1.0 已发布至 [GitHub Releases](https://github.com/woniu101/CodexAccountManager/releases/tag/v0.1.0)。以下未勾选项目作为后续补充验证保留。
+
 ### 仓库检查
 
 - [x] README 与当前功能同步。
@@ -250,16 +252,16 @@ src-tauri/src/
 
 ### GitHub Release
 
-- [ ] 创建 `v0.1.0` 标签。
-- [ ] 上传 `codex-account-manager.exe`。
-- [ ] 计算并发布 SHA-256：
+- [x] 创建 `v0.1.0` 标签。
+- [x] 上传 `codex-account-manager.exe`。
+- [x] 计算并发布 SHA-256：
 
 ```powershell
 Get-FileHash .\src-tauri\target\release\codex-account-manager.exe -Algorithm SHA256
 ```
 
-- [ ] 发布说明包含系统要求、主要功能、已知限制和升级注意事项。
-- [ ] 明确标注未签名便携版，提醒用户只从官方 Releases 下载。
+- [x] 发布说明包含系统要求、主要功能、已知限制和升级注意事项。
+- [x] 明确标注未签名便携版，提醒用户只从官方 Releases 下载。
 
 ## 后续路线
 
